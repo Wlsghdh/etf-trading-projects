@@ -14,6 +14,14 @@ interface DBTableGridProps {
 type ViewMode = 'grid' | 'table';
 type FilterTF = 'all' | 'D' | 'W' | 'M' | '1h' | '10m' | '12M';
 
+function isRecentlyUpdated(latestDate: string | null): boolean {
+  if (!latestDate) return false;
+  const latest = new Date(latestDate);
+  const now = new Date();
+  const diffHours = (now.getTime() - latest.getTime()) / (1000 * 60 * 60);
+  return diffHours < 24; // 24시간 이내 업데이트된 테이블
+}
+
 export function DBTableGrid({ tables, onSelectTable, selectedTable }: DBTableGridProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [filterTF, setFilterTF] = useState<FilterTF>('all');
@@ -67,6 +75,8 @@ export function DBTableGrid({ tables, onSelectTable, selectedTable }: DBTableGri
                 className={`rounded-md px-2 py-1.5 text-center transition-colors cursor-pointer ${
                   selectedTable === table.tableName
                     ? 'ring-2 ring-primary bg-primary/20'
+                    : isRecentlyUpdated(table.latestDate)
+                    ? 'bg-green-500/10 border-2 border-white/40 hover:bg-green-500/20'
                     : table.isUpToDate
                     ? 'bg-green-500/10 border border-green-500/20 hover:bg-green-500/20'
                     : 'bg-red-500/10 border border-red-500/20 hover:bg-red-500/20'

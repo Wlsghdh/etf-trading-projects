@@ -48,7 +48,9 @@ export function KisApiStatus() {
   }, [fetchData]);
 
   const connected = balance?.kis_connected ?? false;
-  const hasBalance = (balance?.available_cash_usd ?? 0) > 0 || (balance?.total_evaluation_usd ?? 0) > 0;
+  const cashUsd = balance?.available_cash_usd ?? 0;
+  const totalUsd = balance?.total_evaluation_usd ?? 0;
+  const hasBalance = cashUsd > 0 || totalUsd > 0;
 
   return (
     <Card className="shadow-sm">
@@ -118,9 +120,14 @@ export function KisApiStatus() {
           <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             계좌 잔고
           </h4>
-          {!hasBalance && connected && (
+          {!hasBalance && connected && !loading && (
             <div className="text-xs text-yellow-400 bg-yellow-500/10 rounded px-2 py-1.5">
-              잔고가 없습니다. 모의투자 해외주식을 신청해주세요.
+              잔고를 조회할 수 없습니다. 새로고침을 눌러주세요.
+            </div>
+          )}
+          {hasBalance && (
+            <div className="text-xs text-green-400 bg-green-500/10 rounded px-2 py-1.5">
+              주문 가능: ${cashUsd.toLocaleString()} · 총 자산: ${totalUsd.toLocaleString()}
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
