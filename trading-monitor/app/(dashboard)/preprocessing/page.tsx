@@ -93,12 +93,16 @@ export default function PreprocessingPage() {
         <FeatureDBOverview
           title="etf2_db (원본 데이터)"
           overview={rawDB}
-          description="TradingView 스크래핑 원본. 스크래핑 완료 후 여기에 데이터가 쌓임."
+          description="TradingView 스크래핑 원본. _D(101) + _1h(101) = 202개 테이블 수집 대상."
         />
         <FeatureDBOverview
           title="etf2_db_processed (피처 데이터)"
           overview={processedDB}
-          description="85개 피처가 계산된 ML 학습용 DB. 피처 엔지니어링 완료 후 여기에 반영."
+          description="85개 피처가 계산된 ML 학습용 DB. 101종목 전부 처리되면 건강도 100%."
+          isProcessedDB
+          featureCompleted={featureStatus?.status === 'completed'}
+          featureProgress={featureStatus?.progress}
+          featureTotal={featureStatus?.total || 101}
         />
       </div>
 

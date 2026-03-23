@@ -7,9 +7,13 @@ interface FeatureDBOverviewProps {
   title: string;
   overview: DBOverview | null;
   description: string;
+  isProcessedDB?: boolean;
+  featureCompleted?: boolean;
+  featureProgress?: number;
+  featureTotal?: number;
 }
 
-export function FeatureDBOverview({ title, overview, description }: FeatureDBOverviewProps) {
+export function FeatureDBOverview({ title, overview, description, isProcessedDB, featureCompleted, featureProgress, featureTotal }: FeatureDBOverviewProps) {
   if (!overview) {
     return (
       <Card className="shadow-sm">
@@ -19,9 +23,23 @@ export function FeatureDBOverview({ title, overview, description }: FeatureDBOve
     );
   }
 
-  const healthPercent = overview.totalTables > 0
-    ? Math.round((overview.upToDateTables / overview.totalTables) * 100)
-    : 0;
+  // ML 모델용 건강도: processed DB는 피처 처리 완료 여부 기준
+  let healthPercent: number;
+  let healthLabel: string;
+
+  if (isProcessedDB) {
+    // etf2_db_processed: 피처 처리 완료 수 / 전체 101
+    const total = featureTotal || overview.totalTables || 101;
+    const completed = featureCompleted ? (featureProgress || total) : overview.upToDateTables;
+    healthPercent = total > 0 ? Math.round((completed / total) * 100) : 0;
+    healthLabel = `${completed}/${total} 종목 처리 완료`;
+  } else {
+    // etf2_db: _D와 _1h만 기준 (실제 수집 대상)
+    // 607개 중 _D(101) + _1h(101) = 202개만 수집 대상
+    const collectTarget = Math.min(overview.totalTables, 202);
+    healthPercent = collectTarget > 0 ? Math.round((overview.upToDateTables / collectTarget) * 100) : 0;
+    healthLabel = `${overview.upToDateTables}/${collectTarget} 테이블 최신`;
+  }
 
   return (
     <Card className="shadow-sm">
@@ -39,14 +57,33 @@ export function FeatureDBOverview({ title, overview, description }: FeatureDBOve
             <p className="text-xs text-muted-foreground">총 행 수</p>
             <p className="text-xl font-bold">{overview.totalRows.toLocaleString()}</p>
           </div>
-          <div>
-            <p className="text-xs text-muted-foreground">최신</p>
-            <p className="text-xl font-bold text-green-500">{overview.upToDateTables}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">지연</p>
-            <p className="text-xl font-bold text-red-500">{overview.staleTables}</p>
-          </div>
+          {isProcessedDB ? (
+            <>
+              <div>
+                <p className="text-xs text-muted-foreground">피처 처리</p>
+                <p className="text-xl font-bold text-green-500">
+                  {featureProgress || overview.upToDateTables}/{featureTotal || overview.totalTables}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">상태</p>
+                <p className={`text-xl font-bold ${featureCompleted ? 'text-green-500' : 'text-yellow-500'}`}>
+                  {featureCompleted ? '완료' : '대기'}
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <p className="text-xs text-muted-foreground">최신 (수집됨)</p>
+                <p className="text-xl font-bold text-green-500">{overview.upToDateTables}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">지연</p>
+                <p className="text-xl font-bold text-red-500">{overview.staleTables}</p>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="space-y-1">
@@ -56,12 +93,15 @@ export function FeatureDBOverview({ title, overview, description }: FeatureDBOve
               {healthPercent}%
             </span>
           </div>
-          <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${healthPercent >= 90 ? 'bg-green-500' : healthPercent >= 70 ? 'bg-yellow-500' : 'bg-red-500'}`}
-              style={{ width: `${healthPercent}%` }}
-            />
+          <div className="flex items-center gap-2">
+            <div className="h-2 flex-1 rounded-full bg-muted overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${healthPercent >= 90 ? 'bg-green-500' : healthPercent >= 70 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                style={{ width: `${healthPercent}%` }}
+              />
+            </div>
           </div>
+          <p className="text-[10px] text-muted-foreground">{healthLabel}</p>
         </div>
       </CardContent>
     </Card>

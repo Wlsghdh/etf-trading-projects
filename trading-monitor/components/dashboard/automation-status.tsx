@@ -51,16 +51,26 @@ export function AutomationStatus({ status, onRefetch }: AutomationStatusProps) {
   const [loading, setLoading] = useState(false);
   const [automationEnabled, setAutomationEnabled] = useState(status.automationEnabled ?? false);
   const [fractionalMode, setFractionalMode] = useState(status.fractionalMode ?? false);
+  const [dstEnabled, setDstEnabled] = useState(true); // 서머타임 기본 ON
 
-  const nextPrediction = getNextScheduledTime(6, 0);
-  const nextTrading = getNextScheduledTime(23, 30);
+  // 서머타임 상태 조회
+  useState(() => {
+    fetch('/trading/api/trading/automation').then(r => r.json()).then(d => {
+      if (d.dst_enabled !== undefined) setDstEnabled(d.dst_enabled);
+    }).catch(() => {});
+  });
+
+  const tradeHour = dstEnabled ? 22 : 23;
+  const nextPrediction = getNextScheduledTime(7, 0);
+  const nextTrading = getNextScheduledTime(tradeHour, 30);
   const nextRetraining = getNextScheduledTime(3, 0, 1);
 
-  async function toggleAutomation(enabled: boolean, fractional?: boolean) {
+  async function toggleAutomation(enabled: boolean, fractional?: boolean, dst?: boolean) {
     setLoading(true);
     try {
       const body: Record<string, unknown> = { enabled };
       if (fractional !== undefined) body.fractional_mode = fractional;
+      if (dst !== undefined) body.dst_enabled = dst;
 
       const res = await fetch('/trading/api/trading/automation', {
         method: 'POST',
@@ -71,6 +81,7 @@ export function AutomationStatus({ status, onRefetch }: AutomationStatusProps) {
       if (data.success) {
         setAutomationEnabled(data.enabled);
         setFractionalMode(data.fractional_mode);
+        if (data.dst_enabled !== undefined) setDstEnabled(data.dst_enabled);
         onRefetch?.();
       }
     } catch {
@@ -152,6 +163,43 @@ export function AutomationStatus({ status, onRefetch }: AutomationStatusProps) {
             >
               <div className="font-semibold">소수점 매매</div>
               <div className="mt-0.5 text-[10px] opacity-70">미지원 (준비 중)</div>
+            </button>
+          </div>
+        </div>
+
+        {/* 서머타임 토글 */}
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            서머타임 (미국 개장 시간)
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setDstEnabled(true);
+                toggleAutomation(automationEnabled, undefined, true);
+              }}
+              className={`flex-1 rounded-md px-3 py-2 text-xs font-medium border transition-colors ${
+                dstEnabled
+                  ? 'border-yellow-500 bg-yellow-500/20 text-yellow-400'
+                  : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'
+              }`}
+            >
+              <div className="font-semibold">ON (3월~11월)</div>
+              <div className="mt-0.5 text-[10px] opacity-70">매매 22:30 KST</div>
+            </button>
+            <button
+              onClick={() => {
+                setDstEnabled(false);
+                toggleAutomation(automationEnabled, undefined, false);
+              }}
+              className={`flex-1 rounded-md px-3 py-2 text-xs font-medium border transition-colors ${
+                !dstEnabled
+                  ? 'border-blue-500 bg-blue-500/20 text-blue-400'
+                  : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'
+              }`}
+            >
+              <div className="font-semibold">OFF (11월~3월)</div>
+              <div className="mt-0.5 text-[10px] opacity-70">매매 23:30 KST</div>
             </button>
           </div>
         </div>

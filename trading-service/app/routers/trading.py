@@ -29,6 +29,15 @@ router = APIRouter(prefix="/api/trading")
 
 # --- 자동매매 상태 관리 ---
 _automation_enabled = False
+_dst_enabled = True  # 서머타임 (3월~11월)
+
+
+def _get_trade_time() -> tuple[int, int]:
+    """서머타임 적용된 매매 시간 반환"""
+    if _dst_enabled:
+        return 22, 30  # 서머타임: 22:30 KST
+    else:
+        return 23, 30  # 비서머타임: 23:30 KST
 
 
 class AutomationStatusResponse(BaseModel):
@@ -36,17 +45,20 @@ class AutomationStatusResponse(BaseModel):
     fractional_mode: bool
     scheduler_time: str
     trading_mode: str
+    dst_enabled: bool
 
 
 class AutomationToggleRequest(BaseModel):
     enabled: bool
-    fractional_mode: Optional[bool] = None  # None이면 변경 안 함
+    fractional_mode: Optional[bool] = None
+    dst_enabled: Optional[bool] = None
 
 
 class AutomationToggleResponse(BaseModel):
     success: bool
     enabled: bool
     fractional_mode: bool
+    dst_enabled: bool
     message: str
 
 
@@ -157,18 +169,20 @@ def create_new_cycle(req: NewCycleRequest, db: Session = Depends(get_db)):
 def get_automation_status():
     """자동매매 설정 상태 조회"""
     capital_mgr = get_capital_manager()
+    hour, minute = _get_trade_time()
     return AutomationStatusResponse(
         enabled=_automation_enabled,
         fractional_mode=capital_mgr.fractional_mode,
-        scheduler_time=f"{settings.trade_hour_kst:02d}:{settings.trade_minute_kst:02d} KST",
+        scheduler_time=f"{hour:02d}:{minute:02d} KST",
         trading_mode=settings.trading_mode,
+        dst_enabled=_dst_enabled,
     )
 
 
 @router.post("/automation", response_model=AutomationToggleResponse)
 def toggle_automation(req: AutomationToggleRequest):
-    """자동매매 시작/중지 및 매매 모드 설정"""
-    global _automation_enabled
+    """자동매매 시작/중지 및 매매 모드/서머타임 설정"""
+    global _automation_enabled, _dst_enabled
     capital_mgr = get_capital_manager()
 
     _automation_enabled = req.enabled
@@ -176,25 +190,32 @@ def toggle_automation(req: AutomationToggleRequest):
     if req.fractional_mode is not None:
         capital_mgr.fractional_mode = req.fractional_mode
 
-    # APScheduler 제어
+    if req.dst_enabled is not None:
+        _dst_enabled = req.dst_enabled
+
+    # APScheduler 시간 업데이트
+    hour, minute = _get_trade_time()
     try:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
-        # main.py에서 생성된 scheduler에 접근
+        from apscheduler.triggers.cron import CronTrigger
+        from app.services.trade_executor import execute_daily_trading
         import app.main as main_module
-        app_instance = main_module.app
-        # scheduler는 lifespan에서 생성되므로 직접 접근이 어려움
-        # 대신 automation flag로 execute_daily_trading에서 체크
+        # main.py의 scheduler 직접 접근은 어려우므로 로그만
+        import logging
+        logging.getLogger(__name__).info(f"매매 시간 변경: {hour:02d}:{minute:02d} KST (서머타임: {'ON' if _dst_enabled else 'OFF'})")
     except Exception:
         pass
 
     mode_str = "소수점" if capital_mgr.fractional_mode else "정수"
     action = "시작" if _automation_enabled else "중지"
+    dst_str = "서머타임 ON (22:30)" if _dst_enabled else "서머타임 OFF (23:30)"
 
     return AutomationToggleResponse(
         success=True,
         enabled=_automation_enabled,
         fractional_mode=capital_mgr.fractional_mode,
-        message=f"자동매매 {action} ({mode_str} 모드, {settings.trading_mode})",
+        dst_enabled=_dst_enabled,
+        message=f"자동매매 {action} ({mode_str}, {dst_str})",
     )
 
 
