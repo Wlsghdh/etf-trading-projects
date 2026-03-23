@@ -102,10 +102,10 @@ class KISClient:
         }
 
     async def _rate_limit(self):
-        """KIS 초당 20건 제한 준수 (50ms 간격)"""
+        """KIS 모의투자 안정적 호출 (200ms 간격, 초당 5건)"""
         elapsed = time.time() - self._last_call_time
-        if elapsed < 0.05:
-            await asyncio.sleep(0.05 - elapsed)
+        if elapsed < 0.2:
+            await asyncio.sleep(0.2 - elapsed)
         self._last_call_time = time.time()
 
     async def get_access_token(self) -> str:
@@ -226,8 +226,8 @@ class KISClient:
             )
         except httpx.HTTPError as e:
             logger.error(f"잔고 조회 HTTP 오류: {e}")
-            # 500/403 에러 시 토큰 리셋하여 다음 호출에서 재발급
-            if "500" in str(e) or "403" in str(e):
+            # 403만 토큰 리셋 (500은 서버 문제이므로 토큰은 유지)
+            if "403" in str(e):
                 self._access_token = None
                 self._token_expires_at = 0.0
             return BalanceInfo()
@@ -270,7 +270,7 @@ class KISClient:
             "ACNT_PRDT_CD": account_parts[1],
             "OVRS_EXCG_CD": exchange_code,
             "PDNO": code.upper(),
-            "ORD_QTY": str(round(qty, 4)),
+            "ORD_QTY": str(int(qty)),
             "OVRS_ORD_UNPR": ord_unpr,
             "ORD_SVR_DVSN_CD": "0",
             "ORD_DVSN": "00",
@@ -281,8 +281,13 @@ class KISClient:
                 resp = await client.post(
                     url, headers=self._get_headers(tr_id), json=body
                 )
-                resp.raise_for_status()
-                data = resp.json()
+
+            data = resp.json()
+
+            if resp.status_code != 200:
+                msg = data.get("msg1", f"HTTP {resp.status_code}")
+                logger.warning(f"주문 응답 {resp.status_code}: {msg} ({code})")
+                return OrderResult(success=False, message=msg)
 
             if data.get("rt_cd") == "0":
                 output = data.get("output", {})
@@ -298,8 +303,8 @@ class KISClient:
                     success=False,
                     message=data.get("msg1", "주문 실패"),
                 )
-        except httpx.HTTPError as e:
-            return OrderResult(success=False, message=f"HTTP 오류: {str(e)}")
+        except Exception as e:
+            return OrderResult(success=False, message=f"오류: {str(e)}")
 
     async def get_current_price(self, code: str) -> Optional[float]:
         """해외주식 현재가 조회"""
