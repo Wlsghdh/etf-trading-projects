@@ -28,14 +28,14 @@ RAW_OHLCV_COLS = ["open", "high", "low", "close", "volume", "dividends", "stock_
 
 def _build_db_url(db_name: str) -> str:
     """Build MySQL URL from environment variables."""
-    if os.getenv("MYSQL_URL"):
-        # Replace the DB name in the URL
-        base_url = os.getenv("MYSQL_URL")
-        # mysql+pymysql://user:pass@host:port/original_db -> replace last part
-        parts = base_url.rsplit("/", 1)
-        return f"{parts[0]}/{db_name}"
+    # Try DB_URL or MYSQL_URL
+    for env_key in ("DB_URL", "MYSQL_URL"):
+        base_url = os.getenv(env_key)
+        if base_url:
+            parts = base_url.rsplit("/", 1)
+            return f"{parts[0]}/{db_name}"
 
-    host = os.getenv("MYSQL_HOST", "localhost")
+    host = os.getenv("MYSQL_HOST", "172.17.0.1")
     port = os.getenv("MYSQL_PORT", "3306")
     user = os.getenv("MYSQL_USER", "ahnbi2")
     password = os.getenv("MYSQL_PASSWORD", "bigdata")

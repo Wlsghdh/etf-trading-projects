@@ -75,8 +75,11 @@ async def run_feature_processing(
         _feature_job_status["message"] = f"Processing {len(symbols)} symbols..."
 
         # Build pipeline
+        import os
+        db_url = os.getenv("DB_URL", "mysql+pymysql://ahnbi2:bigdata@172.17.0.1:3306/etf2_db")
         pipeline = FeaturePipeline(
             data_provider="mysql",
+            mysql_url=db_url,
             include_macro=include_macro,
             include_target=True,
             target_horizon=63,

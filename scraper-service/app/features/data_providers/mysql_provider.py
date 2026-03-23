@@ -56,12 +56,14 @@ class MySQLProvider(BaseDataProvider):
 
     def _get_db_url_from_env(self) -> str:
         """Build database URL from environment variables."""
-        # Try full URL first
+        # Try full URL first (DB_URL or MYSQL_URL)
+        if os.getenv("DB_URL"):
+            return os.getenv("DB_URL")
         if os.getenv("MYSQL_URL"):
             return os.getenv("MYSQL_URL")
 
         # Build from components
-        host = os.getenv("MYSQL_HOST", "localhost")
+        host = os.getenv("MYSQL_HOST", "172.17.0.1")
         port = os.getenv("MYSQL_PORT", "3306")
         user = os.getenv("MYSQL_USER", "ahnbi2")
         password = os.getenv("MYSQL_PASSWORD", "bigdata")
