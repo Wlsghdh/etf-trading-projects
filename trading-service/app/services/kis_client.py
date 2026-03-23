@@ -226,6 +226,10 @@ class KISClient:
             )
         except httpx.HTTPError as e:
             logger.error(f"잔고 조회 HTTP 오류: {e}")
+            # 500/403 에러 시 토큰 리셋하여 다음 호출에서 재발급
+            if "500" in str(e) or "403" in str(e):
+                self._access_token = None
+                self._token_expires_at = 0.0
             return BalanceInfo()
 
     async def buy_order(
