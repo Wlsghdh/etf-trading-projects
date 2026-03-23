@@ -46,11 +46,11 @@ def get_tables(
                 else:
                     symbol, timeframe = name, ""
 
-                # 최신 여부 (2일 이내)
+                # 최신 여부 (5일 이내 - 주말 고려)
                 is_up_to_date = False
                 if latest:
                     check = db.execute(
-                        text(f"SELECT MAX(time) >= DATE_SUB(NOW(), INTERVAL 3 DAY) FROM `{name}`")
+                        text(f"SELECT MAX(time) >= DATE_SUB(NOW(), INTERVAL 5 DAY) FROM `{name}`")
                     )
                     is_up_to_date = bool(check.scalar())
 
