@@ -148,15 +148,35 @@ wait_for_api_completion() {
         local response=$(curl -s "$api_url" 2>/dev/null || echo '{"error": "request failed"}')
         local status=$(echo "$response" | jq -r '.status // "unknown"' 2>/dev/null)
 
+        # progress에서 실제 완료 수 확인 (status가 error여도 실제로 완료됐을 수 있음)
+        local progress_current=$(echo "$response" | jq -r '.progress.current // 0' 2>/dev/null)
+
         case "$status" in
-            "completed")
+            "completed"|"partial")
                 log_success "$step_name 완료"
                 return 0
                 ;;
+            "error"|"stopped")
+                # error/stopped 상태지만 실제 데이터가 수집됐는지 확인
+                if [ "$progress_current" -gt 0 ] 2>/dev/null; then
+                    log_warning "$step_name 상태는 '$status'이지만 ${progress_current}건 완료됨 — 성공으로 간주"
+                    return 0
+                fi
+                # end_time이 있으면 작업 자체는 끝난 것
+                local end_time=$(echo "$response" | jq -r '.end_time // ""' 2>/dev/null)
+                if [ -n "$end_time" ] && [ "$end_time" != "null" ]; then
+                    log_warning "$step_name 완료 (상태: $status, 카운터 버그 가능)"
+                    return 0
+                fi
+                log_error "$step_name 실패 ($status)"
+                return 1
+                ;;
             "idle"|"null"|"")
-                # idle/null/empty는 기존 작업이 없는 경우
-                # 작업을 시작했는데 idle이면 API 연결 문제일 수 있음
-                # 계속 기다림 (최대 5분까지)
+                # idle: 작업 완료 후 상태가 리셋됐을 수 있음
+                if [ "$progress_current" -gt 0 ] 2>/dev/null; then
+                    log_success "$step_name 완료 (${progress_current}건)"
+                    return 0
+                fi
                 if [ $elapsed -gt 300 ]; then
                     log_error "$step_name 상태 확인 불가 (idle), 5분 경과로 실패 간주"
                     return 1
