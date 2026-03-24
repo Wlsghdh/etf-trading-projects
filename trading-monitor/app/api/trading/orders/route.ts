@@ -5,6 +5,13 @@ export const revalidate = 0;
 
 const TRADING_SERVICE_URL = process.env.TRADING_SERVICE_URL || 'http://localhost:8002';
 
+function toKST(utc: string): string {
+  if (!utc) return '';
+  const d = new Date(utc);
+  d.setHours(d.getHours() + 9);
+  return d.toISOString();
+}
+
 function transformOrders(raw: Record<string, unknown>) {
   const orders = (raw.orders as Array<Record<string, unknown>>) || [];
 
@@ -16,7 +23,7 @@ function transformOrders(raw: Record<string, unknown>) {
     quantity: (o.quantity as number) || 0,
     price: (o.price as number) || 0,
     status: ((o.status as string) || '').toLowerCase() === 'success' ? 'success' : 'failed',
-    timestamp: (o.created_at as string) || new Date().toISOString(),
+    timestamp: toKST((o.created_at as string) || ''),
     reason: (o.error_message as string) || undefined,
   }));
 }
