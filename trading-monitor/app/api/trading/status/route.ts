@@ -7,22 +7,44 @@ const TRADING_SERVICE_URL = process.env.TRADING_SERVICE_URL || 'http://localhost
 
 async function getTodayOrderCounts() {
   try {
-    const res = await fetch(`${TRADING_SERVICE_URL}/api/trading/orders?page_size=200`, {
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return { buys: 0, sells: 0 };
-    const data = await res.json();
-    const orders = data.orders || [];
-    const today = new Date().toISOString().split('T')[0];
+    // purchases 기반으로 오늘 매수/매도 건수 확인 (purchase_date가 KST 기준)
+    const [ordersRes, portRes] = await Promise.all([
+      fetch(`${TRADING_SERVICE_URL}/api/trading/orders?page_size=200`, { signal: AbortSignal.timeout(5000) }),
+      fetch(`${TRADING_SERVICE_URL}/api/trading/history?page_size=200`, { signal: AbortSignal.timeout(5000) }),
+    ]);
+
+    // KST 기준 오늘 날짜
+    const now = new Date();
+    now.setHours(now.getHours() + 9);
+    const todayKST = now.toISOString().split('T')[0];
 
     let buys = 0, sells = 0;
-    for (const o of orders) {
-      const orderDate = (o.created_at || '').split('T')[0];
-      if (orderDate === today && o.status === 'SUCCESS') {
-        if (o.order_type?.includes('BUY')) buys++;
-        else if (o.order_type?.includes('SELL')) sells++;
+
+    // purchases에서 purchase_date 기준 (KST)
+    if (portRes.ok) {
+      const portData = await portRes.json();
+      for (const p of portData.purchases || []) {
+        const pDate = (p.purchase_date || '').split('T')[0];
+        if (pDate === todayKST) buys++;
+        if (p.sold && (p.sold_date || '').split('T')[0] === todayKST) sells++;
       }
     }
+
+    // purchases가 없으면 orders fallback (UTC→KST 변환)
+    if (buys === 0 && sells === 0 && ordersRes.ok) {
+      const data = await ordersRes.json();
+      for (const o of data.orders || []) {
+        if (o.status !== 'SUCCESS') continue;
+        const utc = new Date(o.created_at || '');
+        utc.setHours(utc.getHours() + 9);
+        const orderDateKST = utc.toISOString().split('T')[0];
+        if (orderDateKST === todayKST) {
+          if (o.order_type?.includes('BUY')) buys++;
+          else if (o.order_type?.includes('SELL')) sells++;
+        }
+      }
+    }
+
     return { buys, sells };
   } catch {
     return { buys: 0, sells: 0 };

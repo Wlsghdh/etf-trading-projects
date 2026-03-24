@@ -30,11 +30,12 @@ export default function PipelinePage() {
     ];
 
     try {
-      const [scrapRes, featRes, rankRes, autoRes] = await Promise.allSettled([
+      const [scrapRes, featRes, rankRes, autoRes, statusRes] = await Promise.allSettled([
         fetch('/trading/api/scraper/status'),
         fetch('/trading/api/features/status'),
         fetch('/trading/api/ml/ranking'),
         fetch('/trading/api/trading/automation'),
+        fetch('/trading/api/trading/status'),
       ]);
 
       // 스크래핑
@@ -69,6 +70,17 @@ export default function PipelinePage() {
         const d = await autoRes.value.json();
         steps[3].status = d.enabled ? 'running' : 'idle';
         steps[3].lastRunMessage = d.enabled ? `활성 (${d.scheduler_time})` : '비활성';
+        steps[3].scheduledTime = d.scheduler_time || '22:30';
+      }
+
+      // 매매 상태에서 오늘 매수 건수 반영
+      if (statusRes.status === 'fulfilled' && statusRes.value.ok) {
+        const d = await statusRes.value.json();
+        if (d.todayBuyCount > 0 || d.todaySellCount > 0) {
+          steps[3].status = 'completed';
+          steps[3].lastRunMessage = `매수 ${d.todayBuyCount}건 · 매도 ${d.todaySellCount}건 완료`;
+          steps[3].lastRunAt = d.automationStatus?.lastRun || null;
+        }
       }
     } catch { /* silent */ }
 
