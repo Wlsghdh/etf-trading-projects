@@ -54,6 +54,7 @@ services:
     environment:
       - TZ=Asia/Seoul
       - DB_URL=mysql+pymysql://ahnbi2:bigdata@172.17.0.1:3306/etf2_db
+      - FRED_API_KEY=9caba366c8bc71e8fea23b45a34651a5
       - LOG_DIR=/app/logs
       - DOWNLOAD_DIR=/app/downloads
       - HEADLESS=true

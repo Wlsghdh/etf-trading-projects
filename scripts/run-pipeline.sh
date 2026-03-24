@@ -376,7 +376,7 @@ else
     log "🚀 새 피처 처리 작업 시작..."
     RESPONSE=$(curl -s -X POST "$SCRAPER_API/features/process" \
         -H "Content-Type: application/json" \
-        -d '{"include_macro": false, "shift_features": true}')
+        -d '{"include_macro": true, "shift_features": true}')
 
     JOB_ID=$(echo "$RESPONSE" | jq -r '.job_id // empty')
 
