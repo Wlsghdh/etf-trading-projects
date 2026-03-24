@@ -3,14 +3,6 @@
 import { useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import type { DailySummary } from '@/lib/types';
 
 interface DayDetailModalProps {
@@ -18,122 +10,162 @@ interface DayDetailModalProps {
   onClose: () => void;
 }
 
+function formatUSD(v: number) {
+  return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatTime(ts: string) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  // UTC → KST (+9)
+  d.setHours(d.getHours() + 9);
+  return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+}
+
 export function DayDetailModal({ summary, onClose }: DayDetailModalProps) {
   useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handleEsc);
     return () => document.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
-  const isPositive = summary.totalProfitLoss >= 0;
+  const buyTrades = summary.trades.filter(t => t.side === 'BUY');
+  const sellTrades = summary.trades.filter(t => t.side === 'SELL');
+  const totalBuyAmount = buyTrades.reduce((s, t) => s + t.price * t.quantity, 0);
+  const totalSellAmount = sellTrades.reduce((s, t) => s + t.price * t.quantity, 0);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={onClose}
-    >
-      <Card
-        className="w-full max-w-2xl mx-4 max-h-[80vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <CardHeader className="flex flex-row items-center justify-between">
+    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm overflow-auto" onClick={onClose}>
+      <div className="p-6 max-w-3xl mx-auto" onClick={(e) => e.stopPropagation()}>
+        {/* 헤더 */}
+        <div className="flex items-center justify-between mb-6">
           <div>
-            <CardTitle className="text-base">
-              {new Date(summary.date).toLocaleDateString('ko-KR', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-                weekday: 'short',
+            <h2 className="text-xl font-bold">
+              {new Date(summary.date + 'T00:00:00').toLocaleDateString('ko-KR', {
+                year: 'numeric', month: 'long', day: 'numeric', weekday: 'short',
               })}
-            </CardTitle>
-            <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
-              <span>매수 {summary.buyCount}건</span>
-              <span>·</span>
-              <span>매도 {summary.sellCount}건</span>
-              <span>·</span>
-              <span
-                className={`font-medium ${
-                  isPositive ? 'text-green-500' : 'text-red-500'
-                }`}
-              >
-                {isPositive ? '+' : ''}
-                {summary.totalProfitLoss.toLocaleString()}원
-              </span>
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">일일 매매 내역</p>
+          </div>
+          <button onClick={onClose} className="px-3 py-1.5 text-xs rounded border border-border hover:bg-muted">
+            ESC 닫기
+          </button>
+        </div>
+
+        {/* 요약 카드 */}
+        <div className="grid grid-cols-4 gap-3 mb-6">
+          <Card className="shadow-sm">
+            <CardContent className="p-3">
+              <div className="text-[10px] text-muted-foreground uppercase">매수</div>
+              <div className="text-lg font-bold text-red-400">{summary.buyCount}건</div>
+              <div className="text-xs text-muted-foreground tabular-nums">{formatUSD(totalBuyAmount)}</div>
+            </CardContent>
+          </Card>
+          <Card className="shadow-sm">
+            <CardContent className="p-3">
+              <div className="text-[10px] text-muted-foreground uppercase">매도</div>
+              <div className="text-lg font-bold text-cyan-400">{summary.sellCount}건</div>
+              <div className="text-xs text-muted-foreground tabular-nums">{formatUSD(totalSellAmount)}</div>
+            </CardContent>
+          </Card>
+          <Card className="shadow-sm">
+            <CardContent className="p-3">
+              <div className="text-[10px] text-muted-foreground uppercase">총 거래</div>
+              <div className="text-lg font-bold">{summary.trades.length}건</div>
+            </CardContent>
+          </Card>
+          <Card className="shadow-sm">
+            <CardContent className="p-3">
+              <div className="text-[10px] text-muted-foreground uppercase">손익</div>
+              <div className={`text-lg font-bold ${summary.totalProfitLoss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {summary.totalProfitLoss >= 0 ? '+' : ''}{formatUSD(summary.totalProfitLoss)}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 매수 내역 */}
+        {buyTrades.length > 0 && (
+          <div className="mb-4">
+            <h3 className="text-sm font-medium mb-2 flex items-center gap-2">
+              <Badge variant="default" className="text-xs">매수</Badge>
+              {buyTrades.length}건
+            </h3>
+            <div className="border border-border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">종목</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">수량</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">매수가</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">매수금액</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">시간</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {buyTrades.map((t) => (
+                    <tr key={t.id} className="border-t border-border/50">
+                      <td className="py-2 px-3 font-mono font-medium">{t.etfCode}</td>
+                      <td className="py-2 px-3 text-right tabular-nums">{t.quantity}주</td>
+                      <td className="py-2 px-3 text-right tabular-nums">{formatUSD(t.price)}</td>
+                      <td className="py-2 px-3 text-right tabular-nums">{formatUSD(t.price * t.quantity)}</td>
+                      <td className="py-2 px-3 text-right text-xs text-muted-foreground">{formatTime(t.executedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path
-                d="M12 4L4 12M4 4l8 8"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>구분</TableHead>
-                <TableHead>ETF</TableHead>
-                <TableHead className="text-right">수량</TableHead>
-                <TableHead className="text-right">가격</TableHead>
-                <TableHead className="text-right">손익</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {summary.trades.map((trade) => (
-                <TableRow key={trade.id}>
-                  <TableCell>
-                    <Badge
-                      variant={trade.side === 'BUY' ? 'default' : 'destructive'}
-                      className="text-xs"
-                    >
-                      {trade.side === 'BUY' ? '매수' : '매도'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium text-sm">{trade.etfName}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {trade.etfCode}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">{trade.quantity}주</TableCell>
-                  <TableCell className="text-right">
-                    {trade.price.toLocaleString()}원
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {trade.profitLoss != null ? (
-                      <span
-                        className={`font-medium ${
-                          trade.profitLoss >= 0 ? 'text-green-500' : 'text-red-500'
-                        }`}
-                      >
-                        {trade.profitLoss >= 0 ? '+' : ''}
-                        {trade.profitLoss.toLocaleString()}원
-                        {trade.profitLossPercent != null && (
-                          <span className="ml-1 text-xs">
-                            ({trade.profitLossPercent}%)
-                          </span>
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+        )}
+
+        {/* 매도 내역 */}
+        {sellTrades.length > 0 && (
+          <div className="mb-4">
+            <h3 className="text-sm font-medium mb-2 flex items-center gap-2">
+              <Badge variant="destructive" className="text-xs">매도</Badge>
+              {sellTrades.length}건
+            </h3>
+            <div className="border border-border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">종목</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">수량</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">매도가</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">손익</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">수익률</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sellTrades.map((t) => {
+                    const pnl = t.profitLoss || 0;
+                    const isUp = pnl >= 0;
+                    return (
+                      <tr key={t.id} className="border-t border-border/50">
+                        <td className="py-2 px-3 font-mono font-medium">{t.etfCode}</td>
+                        <td className="py-2 px-3 text-right tabular-nums">{t.quantity}주</td>
+                        <td className="py-2 px-3 text-right tabular-nums">{formatUSD(t.price)}</td>
+                        <td className={`py-2 px-3 text-right tabular-nums font-medium ${isUp ? 'text-green-500' : 'text-red-500'}`}>
+                          {isUp ? '+' : ''}{formatUSD(pnl)}
+                        </td>
+                        <td className={`py-2 px-3 text-right tabular-nums font-medium ${isUp ? 'text-green-500' : 'text-red-500'}`}>
+                          {isUp ? '+' : ''}{(t.profitLossPercent || 0).toFixed(2)}%
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {summary.trades.length === 0 && (
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            이 날 매매 내역이 없습니다.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
