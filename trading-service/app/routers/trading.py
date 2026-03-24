@@ -307,15 +307,32 @@ async def _get_exchange_rate() -> float:
 
 
 @router.get("/balance", response_model=BalanceResponse)
-async def get_balance():
-    """KIS API 잔고 조회 (USD + KRW 환산)"""
+async def get_balance(db: Session = Depends(get_db)):
+    """KIS API 잔고 조회 (USD + KRW 환산) + 매수 차감"""
     from app.services.kis_client import get_kis_client
 
     exchange_rate = await _get_exchange_rate()
     kis = get_kis_client()
 
+    # 우리 DB에서 미매도 보유종목 총 투자금 조회
+    invested = 0.0
+    try:
+        cycle = db.query(TradingCycle).filter(TradingCycle.is_active == True).order_by(TradingCycle.id.desc()).first()
+        if cycle:
+            unsold = db.query(DailyPurchase).filter(
+                DailyPurchase.cycle_id == cycle.id,
+                DailyPurchase.sold == False,
+            ).all()
+            invested = sum(p.total_amount for p in unsold)
+    except Exception:
+        pass
+
     try:
         balance = await kis.get_balance()
+
+        # KIS 잔고에서 매수한 금액 차감
+        available = balance.available_cash - invested if balance.available_cash > invested else balance.available_cash
+        total_eval = balance.total_evaluation
 
         holdings = [
             HoldingItem(
@@ -331,10 +348,10 @@ async def get_balance():
         ]
 
         return BalanceResponse(
-            available_cash_usd=balance.available_cash,
-            total_evaluation_usd=balance.total_evaluation,
-            available_cash_krw=round(balance.available_cash * exchange_rate),
-            total_evaluation_krw=round(balance.total_evaluation * exchange_rate),
+            available_cash_usd=available,
+            total_evaluation_usd=total_eval,
+            available_cash_krw=round(available * exchange_rate),
+            total_evaluation_krw=round(total_eval * exchange_rate),
             exchange_rate=round(exchange_rate, 2),
             holdings=holdings,
             kis_connected=True,
