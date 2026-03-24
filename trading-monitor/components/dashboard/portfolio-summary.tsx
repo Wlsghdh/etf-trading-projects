@@ -168,13 +168,13 @@ function PortfolioFullView({ portfolio, onClose }: { portfolio: PortfolioRespons
                     <td className="py-2.5 px-4 text-right tabular-nums">{h.quantity}</td>
                     <td className="py-2.5 px-4 text-right tabular-nums">{formatUSD(h.buyPrice)}</td>
                     <td className="py-2.5 px-4 text-right tabular-nums">
-                      {h.currentPrice !== h.buyPrice ? formatUSD(h.currentPrice) : <span className="text-muted-foreground">장 마감</span>}
+                      {formatUSD(h.currentPrice)}
                     </td>
                     <td className={`py-2.5 px-4 text-right tabular-nums font-medium ${isUp ? 'text-green-500' : 'text-red-500'}`}>
-                      {h.currentPrice !== h.buyPrice ? `${isUp ? '+' : ''}${formatUSD(pnl)}` : '-'}
+                      {isUp ? '+' : ''}{formatUSD(pnl)}
                     </td>
                     <td className={`py-2.5 px-4 text-right tabular-nums font-medium ${isUp ? 'text-green-500' : 'text-red-500'}`}>
-                      {h.currentPrice !== h.buyPrice ? `${isUp ? '+' : ''}${pnlPct.toFixed(2)}%` : '-'}
+                      {isUp ? '+' : ''}{pnlPct.toFixed(2)}%
                     </td>
                     <td className="py-2.5 px-4 text-xs text-muted-foreground">{h.buyDate}</td>
                     <td className="py-2.5 px-4 text-right text-xs text-muted-foreground">D+{h.dDay}</td>
@@ -210,7 +210,7 @@ function PortfolioFullView({ portfolio, onClose }: { portfolio: PortfolioRespons
         </div>
 
         <p className="text-[10px] text-muted-foreground text-center mt-4">
-          현재가는 미국 장 시간(22:30~05:00 KST)에만 실시간 조회됩니다. 장 마감 시 매수가로 표시됩니다.
+          장중(22:30~05:00 KST): 실시간 현재가 · 장 외: 마지막 종가 기준
         </p>
       </div>
     </div>
