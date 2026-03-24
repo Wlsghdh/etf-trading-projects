@@ -369,6 +369,28 @@ async def get_balance(db: Session = Depends(get_db)):
         )
 
 
+@router.get("/snapshots")
+def get_snapshots(db: Session = Depends(get_db), limit: int = 90):
+    """날짜별 포트폴리오 스냅샷 조회"""
+    from app.models import DailySnapshot
+    snapshots = db.query(DailySnapshot).order_by(DailySnapshot.snapshot_date.desc()).limit(limit).all()
+    return [
+        {
+            "date": str(s.snapshot_date),
+            "total_invested": s.total_invested,
+            "total_current_value": s.total_current_value,
+            "total_pnl": s.total_pnl,
+            "total_pnl_percent": s.total_pnl_percent,
+            "available_cash": s.available_cash,
+            "holdings_count": s.holdings_count,
+            "day_buy_count": s.day_buy_count,
+            "day_sell_count": s.day_sell_count,
+            "holdings_detail": s.holdings_detail,
+        }
+        for s in snapshots
+    ]
+
+
 @router.post("/reset", response_model=ResetResponse)
 def reset_cycle(db: Session = Depends(get_db)):
     """

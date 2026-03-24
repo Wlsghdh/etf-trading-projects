@@ -321,6 +321,15 @@ async def execute_daily_trading(db: Session = None) -> dict:
         )
         logger.info(f"=== 매매 완료: {summary} ===")
 
+        # 10. 일일 스냅샷 저장
+        try:
+            _save_daily_snapshot(
+                db, cycle, today, total_cash,
+                bought_count, sold_count, bought_total, sold_total,
+            )
+        except Exception as snap_err:
+            logger.warning(f"스냅샷 저장 실패: {snap_err}")
+
         return {
             "success": True,
             "message": summary,
@@ -345,3 +354,65 @@ async def execute_daily_trading(db: Session = None) -> dict:
     finally:
         if own_session:
             db.close()
+
+
+def _save_daily_snapshot(
+    db, cycle, today, total_cash,
+    buy_count, sell_count, buy_total, sell_total,
+):
+    """매매 완료 후 일일 포트폴리오 스냅샷 저장"""
+    import json
+    from app.models import DailySnapshot, DailyPurchase
+
+    # 미매도 보유종목 조회
+    unsold = db.query(DailyPurchase).filter(
+        DailyPurchase.cycle_id == cycle.id,
+        DailyPurchase.sold == False,
+    ).all()
+
+    total_invested = sum(p.total_amount for p in unsold)
+    available = total_cash - total_invested
+    holdings_count = len(unsold)
+
+    # 종목별 상세 (JSON)
+    holdings_detail = json.dumps([
+        {
+            "etf_code": p.etf_code,
+            "quantity": p.quantity,
+            "buy_price": p.price,
+            "total_amount": p.total_amount,
+            "day": p.trading_day_number,
+        }
+        for p in unsold
+    ], ensure_ascii=False)
+
+    # 기존 스냅샷이 있으면 업데이트, 없으면 생성
+    existing = db.query(DailySnapshot).filter(DailySnapshot.snapshot_date == today).first()
+    if existing:
+        existing.total_invested = total_invested
+        existing.total_current_value = total_invested  # 장 열리면 업데이트 필요
+        existing.total_pnl = 0
+        existing.total_pnl_percent = 0
+        existing.available_cash = available
+        existing.holdings_count = holdings_count
+        existing.day_buy_count = buy_count
+        existing.day_sell_count = sell_count
+        existing.holdings_detail = holdings_detail
+    else:
+        snapshot = DailySnapshot(
+            snapshot_date=today,
+            cycle_id=cycle.id,
+            total_invested=total_invested,
+            total_current_value=total_invested,
+            total_pnl=0,
+            total_pnl_percent=0,
+            available_cash=available,
+            holdings_count=holdings_count,
+            day_buy_count=buy_count,
+            day_sell_count=sell_count,
+            holdings_detail=holdings_detail,
+        )
+        db.add(snapshot)
+
+    db.commit()
+    logger.info(f"스냅샷 저장: {today} | 투자 ${total_invested:,.2f} | {holdings_count}종목")

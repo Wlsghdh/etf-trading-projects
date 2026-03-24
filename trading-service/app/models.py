@@ -76,3 +76,25 @@ class OrderLog(Base):
 
     def __repr__(self):
         return f"<OrderLog {self.order_type} {self.etf_code} {self.status}>"
+
+
+class DailySnapshot(Base):
+    """일일 포트폴리오 스냅샷 (날짜별 수익률 추적)"""
+    __tablename__ = "daily_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    snapshot_date = Column(Date, nullable=False, unique=True)
+    cycle_id = Column(Integer, nullable=True)
+    total_invested = Column(Float, nullable=False, default=0)      # 총 매수 금액
+    total_current_value = Column(Float, nullable=False, default=0) # 현재 평가 금액
+    total_pnl = Column(Float, nullable=False, default=0)           # 총 손익
+    total_pnl_percent = Column(Float, nullable=False, default=0)   # 수익률 %
+    available_cash = Column(Float, nullable=False, default=0)      # 주문 가능 금액
+    holdings_count = Column(Integer, nullable=False, default=0)    # 보유 종목 수
+    day_buy_count = Column(Integer, nullable=False, default=0)     # 당일 매수 건수
+    day_sell_count = Column(Integer, nullable=False, default=0)    # 당일 매도 건수
+    holdings_detail = Column(String(5000), nullable=True)          # JSON: 종목별 상세
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<DailySnapshot {self.snapshot_date} pnl={self.total_pnl_percent:.2f}%>"
