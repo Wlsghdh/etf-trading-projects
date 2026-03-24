@@ -87,14 +87,19 @@ export function SymbolDetailModal({
     script.type = 'text/javascript';
     script.async = true;
     script.innerHTML = JSON.stringify({
-      autosize: true, symbol: symbol, interval: 'D', timezone: 'Asia/Seoul',
-      theme: 'dark', style: '1', locale: 'kr',
-      hide_top_toolbar: false, hide_legend: false,
-      allow_symbol_change: true, save_image: true, calendar: false,
-      withdateranges: true,
-      details: true,
-      hotlist: true,
-      studies: ['RSI@tv-basicstudies', 'MACD@tv-basicstudies', 'Volume@tv-basicstudies'],
+      autosize: true,
+      symbol: symbol,
+      interval: 'D',
+      timezone: 'Asia/Seoul',
+      theme: 'dark',
+      style: '1',
+      locale: 'kr',
+      hide_top_toolbar: false,
+      hide_legend: false,
+      allow_symbol_change: true,
+      save_image: false,
+      calendar: false,
+      studies: ['RSI@tv-basicstudies', 'MACD@tv-basicstudies'],
       support_host: 'https://www.tradingview.com',
     });
 
