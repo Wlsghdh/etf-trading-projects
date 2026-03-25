@@ -68,6 +68,7 @@ async def _execute_fixed_etf_buying(
     fixed_amount: float,
     kis,
     capital_mgr,
+    rankings: list = None,
 ) -> tuple[int, float, list[dict]]:
     """
     30% 고정 ETF 매수 실행.
@@ -89,7 +90,15 @@ async def _execute_fixed_etf_buying(
     )
 
     for code in fixed_codes:
+        # KIS 현재가 조회 시도, 실패 시 ML 랭킹에서 가격 가져오기
         price = await kis.get_current_price(code)
+        if price is None or price <= 0:
+            # ML 랭킹에서 현재가 찾기
+            for r in rankings:
+                if r.symbol == code and r.current_close and r.current_close > 0:
+                    price = r.current_close
+                    logger.info(f"고정 ETF {code} 현재가를 ML 랭킹에서 가져옴: ${price:.2f}")
+                    break
         if price is None or price <= 0:
             logger.warning(f"고정 ETF 현재가 조회 실패: {code}, 스킵")
             continue
@@ -297,7 +306,7 @@ async def execute_daily_trading(db: Session = None) -> dict:
 
         # 7. 고정 ETF 매수 (30%)
         fixed_count, fixed_total, fixed_items = await _execute_fixed_etf_buying(
-            db, cycle.id, day, allocation.fixed_amount, kis, capital_mgr
+            db, cycle.id, day, allocation.fixed_amount, kis, capital_mgr, rankings
         )
         bought_count += fixed_count
         bought_total += fixed_total
