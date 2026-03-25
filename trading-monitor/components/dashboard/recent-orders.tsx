@@ -4,29 +4,25 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { PriceChartPanel } from '@/components/chart/price-chart-panel';
+import { SymbolDetailModal } from '@/components/model/symbol-detail-modal';
 import type { Order } from '@/lib/types';
-import type { Holding } from '@/lib/types';
 
 interface RecentOrdersProps {
   orders: Order[];
 }
 
 export function RecentOrders({ orders }: RecentOrdersProps) {
-  const [selectedHolding, setSelectedHolding] = useState<Holding | null>(null);
+  const [selectedSymbol, setSelectedSymbol] = useState<{
+    symbol: string; price: number; score: number; rank: number; direction: string;
+  } | null>(null);
 
   const handleOrderClick = (order: Order) => {
-    // Create a Holding-like object from Order for the chart panel
-    setSelectedHolding({
-      etfCode: order.etfCode,
-      etfName: order.etfName,
-      quantity: order.quantity,
-      buyPrice: order.price,
-      currentPrice: order.price,
-      buyDate: order.timestamp.split('T')[0],
-      dDay: 0,
-      profitLoss: 0,
-      profitLossPercent: 0,
+    setSelectedSymbol({
+      symbol: order.etfCode,
+      price: order.price,
+      score: 0,
+      rank: 0,
+      direction: order.side === 'BUY' ? 'BUY' : 'SELL',
     });
   };
 
@@ -92,10 +88,16 @@ export function RecentOrders({ orders }: RecentOrdersProps) {
         </CardContent>
       </Card>
 
-      <PriceChartPanel
-        holding={selectedHolding}
-        onClose={() => setSelectedHolding(null)}
-      />
+      {selectedSymbol && (
+        <SymbolDetailModal
+          symbol={selectedSymbol.symbol}
+          currentPrice={selectedSymbol.price}
+          score={selectedSymbol.score}
+          rank={selectedSymbol.rank}
+          direction={selectedSymbol.direction}
+          onClose={() => setSelectedSymbol(null)}
+        />
+      )}
     </>
   );
 }
