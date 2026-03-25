@@ -432,6 +432,59 @@ def get_snapshots(db: Session = Depends(get_db), limit: int = 90):
     ]
 
 
+@router.get("/sqlite/tables")
+def get_sqlite_tables(db: Session = Depends(get_db)):
+    """SQLite 테이블 목록 + 행 수 조회"""
+    from sqlalchemy import text, inspect
+    tables_info = []
+    insp = inspect(db.bind)
+    for table_name in insp.get_table_names():
+        try:
+            count = db.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
+            # 최신 날짜 찾기
+            cols = [c['name'] for c in insp.get_columns(table_name)]
+            latest = None
+            for date_col in ['created_at', 'snapshot_date', 'purchase_date']:
+                if date_col in cols:
+                    row = db.execute(text(f"SELECT MAX({date_col}) FROM {table_name}")).scalar()
+                    if row:
+                        latest = str(row)
+                    break
+            tables_info.append({
+                "tableName": table_name,
+                "rowCount": count,
+                "latestDate": latest,
+                "columns": [{"name": c['name'], "type": str(c['type'])} for c in insp.get_columns(table_name)],
+            })
+        except Exception:
+            pass
+    return {"database": "trading.db", "tables": tables_info, "totalTables": len(tables_info)}
+
+
+@router.get("/sqlite/tables/{table_name}/data")
+def get_sqlite_table_data(table_name: str, limit: int = 30, offset: int = 0, db: Session = Depends(get_db)):
+    """SQLite 테이블 데이터 조회"""
+    from sqlalchemy import text, inspect
+    allowed = [t for t in inspect(db.bind).get_table_names()]
+    if table_name not in allowed:
+        return {"error": "테이블 없음", "rows": []}
+    try:
+        cols = [c['name'] for c in inspect(db.bind).get_columns(table_name)]
+        total = db.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
+        rows = db.execute(text(f"SELECT * FROM {table_name} ORDER BY id DESC LIMIT :l OFFSET :o"), {"l": limit, "o": offset}).fetchall()
+        return {
+            "tableName": table_name,
+            "database": "trading.db",
+            "columns": [{"name": c, "type": ""} for c in cols],
+            "rows": [dict(zip(cols, row)) for row in rows],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    except Exception as e:
+        return {"error": str(e), "rows": []}
+
+
 @router.post("/reset", response_model=ResetResponse)
 def reset_cycle(db: Session = Depends(get_db)):
     """
