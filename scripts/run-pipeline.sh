@@ -296,6 +296,17 @@ else
     else
         log "✅ 작업 시작됨: $JOB_ID"
 
+        # 새 job이 running 상태로 바뀔 때까지 대기 (최대 60초)
+        log "새 작업 시작 대기..."
+        for wait_i in $(seq 1 12); do
+            sleep 5
+            NEW_STATUS=$(curl -s "$SCRAPER_API/jobs/status" 2>/dev/null | jq -r '.status // "unknown"')
+            if [ "$NEW_STATUS" = "running" ] || [ "$NEW_STATUS" = "pending" ]; then
+                log "작업 상태: $NEW_STATUS"
+                break
+            fi
+        done
+
         wait_for_api_completion "$SCRAPER_API/jobs/status" "스크래핑"
         SCRAPE_EXIT=$?
     fi
