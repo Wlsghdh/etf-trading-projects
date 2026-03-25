@@ -77,6 +77,17 @@ export function SymbolDetailModal({
     return () => { window.removeEventListener('keydown', handler); document.body.style.overflow = ''; };
   }, [onClose]);
 
+  // TradingView 거래소 매핑
+  const TV_EXCHANGE: Record<string, string> = {
+    QQQ: 'NASDAQ', TQQQ: 'NASDAQ', AAPL: 'NASDAQ', MSFT: 'NASDAQ', NVDA: 'NASDAQ',
+    GOOGL: 'NASDAQ', GOOG: 'NASDAQ', AMZN: 'NASDAQ', META: 'NASDAQ', TSLA: 'NASDAQ',
+    AVGO: 'NASDAQ', COST: 'NASDAQ', NFLX: 'NASDAQ', ADBE: 'NASDAQ', AMD: 'NASDAQ',
+    INTC: 'NASDAQ', CSCO: 'NASDAQ', QCOM: 'NASDAQ', INTU: 'NASDAQ', AMAT: 'NASDAQ',
+    LRCX: 'NASDAQ', KLAC: 'NASDAQ', CRWD: 'NASDAQ', PANW: 'NASDAQ', TXN: 'NASDAQ',
+    HOOD: 'NASDAQ', SOXX: 'NASDAQ', ADI: 'NASDAQ', APP: 'NASDAQ', CEG: 'NASDAQ',
+  };
+  const tvSymbol = TV_EXCHANGE[symbol] ? `${TV_EXCHANGE[symbol]}:${symbol}` : symbol;
+
   // TradingView 위젯 (예측 OFF일 때)
   useEffect(() => {
     if (showForecast || !tvContainerRef.current) return;
@@ -88,7 +99,7 @@ export function SymbolDetailModal({
     script.async = true;
     script.innerHTML = JSON.stringify({
       autosize: true,
-      symbol: symbol,
+      symbol: tvSymbol,
       interval: 'D',
       timezone: 'Asia/Seoul',
       theme: 'dark',
