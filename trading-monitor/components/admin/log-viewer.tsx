@@ -85,7 +85,7 @@ export function LogViewer({ logs, isLoading }: LogViewerProps) {
           </div>
         ) : (
           <div className="space-y-0">
-            {logs.map((log) => (
+            {[...logs].reverse().map((log) => (
               <div
                 key={log.id}
                 className={`flex gap-2 py-0.5 ${LEVEL_BG[log.level]}`}
