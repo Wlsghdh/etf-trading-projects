@@ -223,7 +223,7 @@ export function PriceChartPanel({ holding, onClose }: PriceChartPanelProps) {
           <div className="flex items-center gap-4">
             <h2 className="text-lg font-semibold">{holding.etfName}</h2>
             <span className="font-mono text-sm text-muted-foreground">{holding.etfCode}</span>
-            <span className="text-xl font-bold tabular-nums">{holding.currentPrice.toLocaleString()}원</span>
+            <span className="text-xl font-bold tabular-nums">{holding.currentPrice.toFixed(2)}</span>
             <span className={`text-sm font-medium tabular-nums ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
               {isPositive ? '+' : ''}{holding.profitLossPercent}%
             </span>
@@ -276,13 +276,13 @@ export function PriceChartPanel({ holding, onClose }: PriceChartPanelProps) {
                 <div className={`mt-1 text-xl font-bold tabular-nums ${changePercent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                   {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(2)}%
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground tabular-nums">{lastClose.toLocaleString()}원</div>
+                <div className="mt-1 text-xs text-muted-foreground tabular-nums">{lastClose.toFixed(2)}</div>
               </CardContent>
             </Card>
             <Card className="shadow-sm">
               <CardContent className="p-4">
                 <div className="text-xs text-muted-foreground">매수가</div>
-                <div className="mt-1 text-xl font-bold tabular-nums">{holding.buyPrice.toLocaleString()}원</div>
+                <div className="mt-1 text-xl font-bold tabular-nums">{holding.buyPrice.toFixed(2)}</div>
                 <div className="mt-1 text-xs text-muted-foreground">수량 {holding.quantity}주</div>
               </CardContent>
             </Card>
@@ -290,7 +290,7 @@ export function PriceChartPanel({ holding, onClose }: PriceChartPanelProps) {
               <CardContent className="p-4">
                 <div className="text-xs text-muted-foreground">평가손익</div>
                 <div className={`mt-1 text-xl font-bold tabular-nums ${holding.profitLoss >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                  {holding.profitLoss >= 0 ? '+' : ''}{holding.profitLoss.toLocaleString()}원
+                  {holding.profitLoss >= 0 ? '+' : ''}{holding.profitLoss.toFixed(2)}
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">D+{holding.dDay}</div>
               </CardContent>
@@ -320,7 +320,7 @@ export function PriceChartPanel({ holding, onClose }: PriceChartPanelProps) {
         animate={{ x: 0 }}
         exit={{ x: '100%' }}
         transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-2xl"
+        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[50vw]"
       >
         <div className="flex w-full flex-col overflow-y-auto bg-background border-l border-border shadow-2xl">
           <div className="flex items-center justify-between border-b border-border px-6 py-4">
@@ -330,7 +330,7 @@ export function PriceChartPanel({ holding, onClose }: PriceChartPanelProps) {
                 <span className="font-mono text-sm text-muted-foreground">{holding.etfCode}</span>
               </div>
               <div className="mt-1 flex items-center gap-3">
-                <span className="text-xl font-bold tabular-nums">{holding.currentPrice.toLocaleString()}원</span>
+                <span className="text-xl font-bold tabular-nums">{holding.currentPrice.toFixed(2)}</span>
                 <span className={`text-sm font-medium tabular-nums ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
                   {isPositive ? '+' : ''}{holding.profitLossPercent}%
                 </span>
@@ -379,7 +379,7 @@ export function PriceChartPanel({ holding, onClose }: PriceChartPanelProps) {
                 <div className={`mt-1 text-xl font-bold tabular-nums ${changePercent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                   {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(2)}%
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground tabular-nums">{lastClose.toLocaleString()}원</div>
+                <div className="mt-1 text-xs text-muted-foreground tabular-nums">{lastClose.toFixed(2)}</div>
               </CardContent>
             </Card>
           </div>
