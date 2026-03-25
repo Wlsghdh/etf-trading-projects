@@ -6,24 +6,28 @@ export const revalidate = 0;
 const TRADING_SERVICE_URL = process.env.TRADING_SERVICE_URL || 'http://localhost:8002';
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://ml-service:8000';
 
-async function getLatestPrices(): Promise<Record<string, number>> {
+async function getLatestPrices(symbols: string[]): Promise<Record<string, number>> {
   const prices: Record<string, number> = {};
-  try {
-    // ML 랭킹에서 최신 종가 가져오기
-    const res = await fetch(`${ML_SERVICE_URL}/api/predictions/ranking/latest`, {
-      signal: AbortSignal.timeout(5000),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      for (const r of data.rankings || []) {
-        if (r.current_close && r.current_close > 0) {
-          prices[r.symbol] = r.current_close;
+
+  // 1. ML service DB tables API에서 각 종목 최신 종가 조회
+  for (const sym of symbols.slice(0, 20)) {  // 최대 20종목
+    try {
+      const res = await fetch(
+        `${ML_SERVICE_URL}/api/db/tables/${sym}_D/data?db_name=etf2_db&limit=1&offset=0`,
+        { signal: AbortSignal.timeout(3000) }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const rows = data.rows || [];
+        if (rows.length > 0) {
+          const close = parseFloat(rows[0].close || '0');
+          if (close > 0) prices[sym] = close;
         }
       }
-    }
-  } catch { /* silent */ }
+    } catch { /* silent */ }
+  }
 
-  // KIS 보유종목에서도 가져오기 (장중에 가능할 때)
+  // 2. KIS 보유종목 현재가 (장중이면 우선)
   try {
     const balRes = await fetch(`${TRADING_SERVICE_URL}/api/trading/balance`, {
       signal: AbortSignal.timeout(5000),
@@ -32,7 +36,7 @@ async function getLatestPrices(): Promise<Record<string, number>> {
       const balData = await balRes.json();
       for (const h of balData.holdings || []) {
         if (h.current_price > 0) {
-          prices[h.code] = h.current_price; // KIS가 있으면 우선
+          prices[h.code] = h.current_price;
         }
       }
     }
@@ -45,7 +49,11 @@ async function transformPortfolio(raw: Record<string, unknown>) {
   const holdings = (raw.holdings as Array<Record<string, unknown>>) || [];
   const totalInvested = (raw.total_invested as number) || 0;
 
-  const prices = await getLatestPrices();
+  // 보유 종목 심볼 추출
+  const symbols = holdings.map(h => (h.etf_code as string) || '').filter(Boolean);
+
+  // 최신 종가 조회
+  const prices = await getLatestPrices(symbols);
 
   let totalCurrentValue = 0;
 
@@ -54,7 +62,6 @@ async function transformPortfolio(raw: Record<string, unknown>) {
     const buyPrice = (h.price as number) || 0;
     const quantity = (h.quantity as number) || 0;
 
-    // ML 랭킹 또는 KIS에서 현재가, 없으면 매수가
     const currentPrice = prices[etfCode] || buyPrice;
     const profitLoss = (currentPrice - buyPrice) * quantity;
     const profitLossPercent = buyPrice > 0 ? ((currentPrice - buyPrice) / buyPrice) * 100 : 0;

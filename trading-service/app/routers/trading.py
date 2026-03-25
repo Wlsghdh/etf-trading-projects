@@ -369,6 +369,47 @@ async def get_balance(db: Session = Depends(get_db)):
         )
 
 
+@router.get("/prices")
+def get_latest_prices(symbols: str = "", db: Session = Depends(get_db)):
+    """보유 종목의 최신 종가 조회 (DB 기반)"""
+    from sqlalchemy import text
+    import os
+
+    result = {}
+
+    # symbols가 비어있으면 보유 종목 자동 조회
+    if not symbols:
+        cycle = db.query(TradingCycle).filter(TradingCycle.is_active == True).order_by(TradingCycle.id.desc()).first()
+        if cycle:
+            unsold = db.query(DailyPurchase).filter(DailyPurchase.cycle_id == cycle.id, DailyPurchase.sold == False).all()
+            symbols = ",".join(set(p.etf_code for p in unsold))
+
+    if not symbols:
+        return result
+
+    try:
+        from sqlalchemy import create_engine
+        db_url = os.getenv("REMOTE_DB_URL", "mysql+pymysql://ahnbi2:bigdata@172.17.0.1:3306/etf2_db")
+        engine = create_engine(db_url)
+        with engine.connect() as conn:
+            for sym in symbols.split(","):
+                sym = sym.strip()
+                if not sym:
+                    continue
+                try:
+                    r = conn.execute(text(f"SELECT close FROM `{sym}_D` ORDER BY time DESC LIMIT 1"))
+                    row = r.fetchone()
+                    if row:
+                        result[sym] = float(row[0])
+                except Exception:
+                    pass
+        engine.dispose()
+    except Exception:
+        pass
+
+    return result
+
+
 @router.get("/snapshots")
 def get_snapshots(db: Session = Depends(get_db), limit: int = 90):
     """날짜별 포트폴리오 스냅샷 조회"""
