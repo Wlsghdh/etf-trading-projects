@@ -56,9 +56,12 @@ export default function DBViewerPage() {
 
   useEffect(() => {
     fetchTables();
-    setSelectedTable(null);
-    setSqliteTableData(null);
-  }, [fetchTables]);
+    // activeDB 변경 시에만 선택 초기화 (SQLite 내부 클릭은 영향 없음)
+    return () => {
+      setSelectedTable(null);
+      setSqliteTableData(null);
+    };
+  }, [activeDB]); // fetchTables 대신 activeDB 직접 의존
 
   // SQLite 테이블 데이터 조회
   async function fetchSqliteTableData(tableName: string, page: number = 0) {
