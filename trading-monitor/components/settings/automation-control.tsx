@@ -31,10 +31,11 @@ export function AutomationControl() {
 
   const fetchStatuses = useCallback(async () => {
     try {
-      const [scrapRes, featRes, autoRes] = await Promise.allSettled([
+      const [scrapRes, featRes, autoRes, rankRes] = await Promise.allSettled([
         fetch('/trading/api/scraper/status'),
         fetch('/trading/api/features/status'),
         fetch('/trading/api/trading/automation'),
+        fetch('/trading/api/ml/ranking'),
       ]);
 
       if (scrapRes.status === 'fulfilled' && scrapRes.value.ok) {
@@ -57,6 +58,23 @@ export function AutomationControl() {
             status: mapStatus(data.status),
             message: data.status === 'running' ? `${data.progress || 0}/${data.total || 101} 처리 중` : data.status === 'completed' ? '정제 완료' : data.message || '대기 중',
           } : s));
+        });
+      }
+
+      // ML 예측
+      if (rankRes.status === 'fulfilled' && rankRes.value.ok) {
+        rankRes.value.json().then(data => {
+          if (data.prediction_date) {
+            const d = new Date(data.prediction_date);
+            d.setHours(d.getHours() + 9);
+            const dateStr = d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
+            const timeStr = d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+            setSteps(p => p.map(s => s.id === 'prediction' ? {
+              ...s,
+              status: 'completed',
+              message: `${data.total_symbols}종목 완료 (${dateStr} ${timeStr})`,
+            } : s));
+          }
         });
       }
 

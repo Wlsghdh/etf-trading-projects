@@ -55,7 +55,7 @@ export function RecentOrders({ orders }: RecentOrdersProps) {
                     <div>
                       <div className="text-sm font-medium">{order.etfName}</div>
                       <div className="text-xs text-muted-foreground">
-                        {order.etfCode} · {order.quantity}주 · {order.price.toLocaleString()}원
+                        {order.etfCode} · {order.quantity}주 · ${order.price.toFixed(2)}
                       </div>
                     </div>
                   </div>
