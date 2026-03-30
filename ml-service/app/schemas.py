@@ -212,6 +212,18 @@ class CandlestickForecastResponse(BaseModel):
     generated_at: datetime
 
 
+class ForecastPriceResponse(BaseModel):
+    """63-day price forecast from regression model"""
+    symbol: str
+    current_close: float
+    predicted_return: float
+    predicted_close: float
+    forecast_days: int = 63
+    model_name: str
+    model_version: Optional[str] = None
+    generated_at: datetime
+
+
 # Model Management Schemas
 class ModelInfoResponse(BaseModel):
     """Model information response"""

@@ -1,51 +1,82 @@
 #!/bin/bash
-# cron 작업 설정 스크립트
+# cron 작업 설정 스크립트 (서버 시간: KST 기준)
 
-PROJECT_DIR="/home/ahnbi2/etf-trading-project"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-echo "📅 Cron 작업 설정"
-echo "================="
+echo "📅 Cron 작업 설정 (KST 기준)"
+echo "============================="
+echo ""
+echo "서버 시간대: $(date +%Z) ($(date '+%Y-%m-%d %H:%M'))"
 echo ""
 echo "다음 작업을 crontab에 추가합니다:"
 echo ""
-echo "1. 매일 미국 장 마감 후 (5 PM ET = 22:00 UTC, 월~금) - 전체 데이터 파이프라인 (스크래핑 → 검증 → 예측)"
-echo "2. 매주 일요일 새벽 2시 - 3개월 전 예측 수익률 업데이트"
-echo "3. 매년 1월 1일 새벽 3시 - 모델 재학습"
+echo "1. [데이터 파이프라인] 매일 07:00 KST (월~금) - 미국 장 마감 후"
+echo "2. [서비스 헬스체크]   매 6시간마다"
+echo "3. [수익률 업데이트]   매주 일요일 11:00 KST"
+echo "4. [모델 재학습]       매년 1월 1일 12:00 KST"
+echo ""
+echo "※ 매매 실행은 trading-service APScheduler (23:30 KST)"
 echo ""
 
 # 현재 crontab 백업
 crontab -l > /tmp/crontab_backup 2>/dev/null
+echo "📋 기존 crontab 백업: /tmp/crontab_backup"
 
-# 기존 ETF 관련 작업 제거 후 새로 추가
+# 기존 ETF 관련 작업 제거
 (crontab -l 2>/dev/null | grep -v "etf-trading-project") | crontab -
 
-# 새 작업 추가
-# 1. 전체 데이터 파이프라인 (스크래핑 → 검증 → 예측)
-#    - 미국 장 마감 후 실행 (5 PM ET = 22:00 UTC, 월~금)
-#    - run-pipeline.sh가 3단계 순차 실행: scrape → audit → predict
-(crontab -l 2>/dev/null; echo "# ETF Trading Pipeline - 전체 파이프라인 (스크래핑 → 검증 → 예측, 미국 장 마감 후 22:00 UTC, 월~금)") | crontab -
-(crontab -l 2>/dev/null; echo "0 22 * * 1-5 $PROJECT_DIR/scripts/run-pipeline.sh >> $PROJECT_DIR/logs/cron.log 2>&1") | crontab -
+mkdir -p "$PROJECT_DIR/logs"
+
+# =============================================================================
+# 1. 데이터 파이프라인 (매일 07:00 KST, 월~금)
+#    미국 장 마감: 06:00 KST (서머타임 05:00) → 1시간 후 수집 시작
+# =============================================================================
+(crontab -l 2>/dev/null; echo "# ETF Pipeline - 데이터 파이프라인 (07:00 KST 월~금)") | crontab -
+(crontab -l 2>/dev/null; echo "0 7 * * 1-5 $PROJECT_DIR/scripts/run-pipeline.sh --skip-validation >> $PROJECT_DIR/logs/cron.log 2>&1") | crontab -
 (crontab -l 2>/dev/null; echo "") | crontab -
 
-# 구 predict-daily.sh 단독 실행은 주석 처리 (파이프라인으로 대체됨)
-# (crontab -l 2>/dev/null; echo "# ETF Trading Pipeline - 매일 예측만 실행 (구버전, 파이프라인으로 대체됨)") | crontab -
-# (crontab -l 2>/dev/null; echo "# 0 22 * * 1-5 $PROJECT_DIR/scripts/predict-daily.sh >> $PROJECT_DIR/logs/cron.log 2>&1") | crontab -
-# (crontab -l 2>/dev/null; echo "") | crontab -
-
-# 2. 주간 수익률 업데이트 (매주 일요일 새벽 2시)
-#    - 3개월 전 예측의 실제 수익률 계산 및 DB 업데이트
-(crontab -l 2>/dev/null; echo "# ETF Trading Pipeline - 주간 수익률 업데이트 (매주 일요일 새벽 2시)") | crontab -
-(crontab -l 2>/dev/null; echo "0 2 * * 0 $PROJECT_DIR/scripts/update-returns.sh >> $PROJECT_DIR/logs/cron.log 2>&1") | crontab -
+# =============================================================================
+# 2. 서비스 헬스체크 (6시간마다)
+# =============================================================================
+(crontab -l 2>/dev/null; echo "# ETF Pipeline - 서비스 헬스체크 (6시간마다)") | crontab -
+(crontab -l 2>/dev/null; echo "0 */6 * * * $PROJECT_DIR/scripts/check-services.sh >> $PROJECT_DIR/logs/cron.log 2>&1") | crontab -
 (crontab -l 2>/dev/null; echo "") | crontab -
 
-# 3. 연간 모델 재학습 (매년 1월 1일 새벽 3시)
-#    - 전년도 데이터로 ML 모델 재학습
-(crontab -l 2>/dev/null; echo "# ETF Trading Pipeline - 연간 모델 학습 (매년 1월 1일 새벽 3시)") | crontab -
-(crontab -l 2>/dev/null; echo "0 3 1 1 * $PROJECT_DIR/scripts/train-yearly.sh >> $PROJECT_DIR/logs/cron.log 2>&1") | crontab -
+# =============================================================================
+# 3. 주간 수익률 업데이트 (매주 일요일 11:00 KST)
+# =============================================================================
+(crontab -l 2>/dev/null; echo "# ETF Pipeline - 주간 수익률 업데이트 (일요일 11:00 KST)") | crontab -
+(crontab -l 2>/dev/null; echo "0 11 * * 0 $PROJECT_DIR/scripts/update-returns.sh >> $PROJECT_DIR/logs/cron.log 2>&1") | crontab -
+(crontab -l 2>/dev/null; echo "") | crontab -
 
+# =============================================================================
+# 4. 연간 모델 재학습 (매년 1월 1일 12:00 KST)
+# =============================================================================
+(crontab -l 2>/dev/null; echo "# ETF Pipeline - 연간 모델 학습 (1월 1일 12:00 KST)") | crontab -
+(crontab -l 2>/dev/null; echo "0 12 1 1 * $PROJECT_DIR/scripts/train-yearly.sh >> $PROJECT_DIR/logs/cron.log 2>&1") | crontab -
+
+echo ""
 echo "✅ Cron 작업 설정 완료!"
 echo ""
 echo "현재 설정된 cron 작업:"
-crontab -l | grep -A1 "ETF Trading"
+echo "---------------------"
+crontab -l | grep -v "^$" | grep -v "^#$"
 echo ""
-echo "📝 로그 위치: $PROJECT_DIR/logs/"
+echo "📝 로그: $PROJECT_DIR/logs/"
+echo ""
+echo "========================================="
+echo "📌 자동화 타임라인 (KST)"
+echo "========================================="
+echo ""
+echo "  07:00  데이터 파이프라인 시작"
+echo "  │  Step 1: TradingView 스크래핑 (101종목)"
+echo "  │  Step 3: 피처 처리 (85개 피처)"
+echo "  │  Step 4: ML 랭킹 예측"
+echo "  │  Step 5: trading-service 상태 확인"
+echo "  ~12:00  파이프라인 완료"
+echo "  │"
+echo "  23:30  APScheduler 자동매매 실행"
+echo "         잔고 조회 → ML 랭킹 → FIFO 매도 → 매수"
+echo ""
+echo "========================================="

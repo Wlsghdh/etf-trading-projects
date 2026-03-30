@@ -396,7 +396,7 @@ class TaskInfoManager:
         elif completed > 0:
             job_info.status = JobStatus.PARTIAL
         else:
-            job_info.status = JobStatus.FAILED
+            job_info.status = JobStatus.ERROR
 
         job_info.end_time = datetime.utcnow().isoformat()
 

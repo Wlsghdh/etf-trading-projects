@@ -85,6 +85,11 @@ export default function LandingPage() {
                       </Link>
                     </li>
                     <li>
+                      <Link href="/trading" className="hover:text-brand-primary">
+                        자동매매
+                      </Link>
+                    </li>
+                    <li>
                       <Link href="/factsheet" className="hover:text-brand-primary">
                         팩트시트
                       </Link>

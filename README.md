@@ -1,268 +1,205 @@
-# ETF Trading Pipeline
+# AI ETF 자동매매 시스템
 
-ETF 주식 데이터 수집, 분석, 예측을 위한 종합 데이터 파이프라인 시스템입니다.
+AI 기반 ETF 종목 선정 및 자동매매를 위한 풀스택 파이프라인 시스템입니다.
+데이터 수집부터 ML 예측, KIS API 자동 주문, 실시간 모니터링까지 전 과정을 자동화합니다.
 
-## 개요
+## 시스템 구성
 
-이 프로젝트는 머신러닝 모델을 활용하여 ETF 및 주식의 상대 순위를 예측하고, 자동화된 데이터 파이프라인을 통해 실시간으로 데이터를 수집 및 분석합니다.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    매일 07:00 KST (cron)                     │
+└─────────────────────────────────────────────────────────────┘
+                            │
+         ┌──────────────────┼──────────────────┐
+         ▼                  ▼                  ▼
+   [데이터 수집]      [피처 처리]         [ML 예측]
+   TradingView       85개 피처 생성      LightGBM 랭킹
+   101종목 스크래핑    etf2_db_processed   Top 100 선정
+         │                  │                  │
+         └──────────────────┼──────────────────┘
+                            ▼
+                   [자동매매 실행] 23:30 KST
+                   KIS API 해외주식 주문
+                   63일 FIFO 순환매매
+                            │
+                            ▼
+                   [모니터링 대시보드]
+                   실시간 포트폴리오 · 차트 · 로그
+```
 
-### 주요 기능
+## 서비스 아키텍처
 
-- **데이터 수집**: TradingView에서 실시간 주식 데이터 스크래핑
-- **특징 엔지니어링**: 85개 피처 (기술지표 + 거시경제 + 엔지니어링 + Z-score + 랭크)
-- **ML 예측**: LightGBM LambdaRank 기반 전체 종목 상대 순위 예측
-- **자동화**: Cron 기반 일일 예측, 월간 모델 재학습
-- **모니터링**: 실시간 스크래핑 상태 대시보드
+| 서비스 | 포트 | 설명 |
+|--------|------|------|
+| **ml-service** | 8000 | ML 예측 API (LightGBM LambdaRank) |
+| **scraper-service** | 8001 | TradingView 데이터 수집 + 피처 엔지니어링 |
+| **trading-service** | 8002 | KIS API 자동매매 (63일 FIFO) |
+| **trading-monitor** | 3002 | 모니터링 대시보드 (Next.js) |
+| **web-dashboard** | 3000 | 메인 웹 대시보드 |
+| **auto-monitoring** | - | 스크래핑 모니터링 |
+| **nginx** | 80 | 리버스 프록시 |
 
 ## 기술 스택
 
 | 분야 | 기술 |
 |------|------|
-| 백엔드 | FastAPI (Python) |
-| 프론트엔드 | Next.js 16, TypeScript, shadcn/ui |
-| ML/DL | LightGBM, scikit-learn |
-| 데이터베이스 | MySQL (원격), SQLite (로컬) |
-| 인프라 | Docker, Docker Compose, Nginx |
-| 자동화 | Bash, Cron |
+| 백엔드 | FastAPI (Python 3.12) |
+| 프론트엔드 | Next.js 16, TypeScript, shadcn/ui, Tailwind CSS |
+| ML | LightGBM LambdaRank, 85개 피처, 2-fold Rolling CV |
+| 자동매매 | KIS API (한국투자증권 해외주식), APScheduler |
+| 차트 | TradingView Widget, lightweight-charts |
+| 데이터베이스 | MySQL (원격 etf2_db), SQLite (로컬) |
+| 인프라 | Docker Compose, Nginx, Cron |
 
-## 시작하기
+## 빠른 시작
 
-### 사전 요구사항
-
-- Docker & Docker Compose v2
-- Python 3.10+ (로컬 개발용)
-- Node.js 18+ (로컬 개발용)
-- SSH 접속 권한 (원격 DB 연결용)
-
-### 1. 레포지토리 클론
+### 1. 서비스 시작
 
 ```bash
-git clone https://github.com/Ahn-Laboratory/etf-trading-project.git
-cd etf-trading-project
-```
-
-### 2. 환경 변수 설정
-
-각 서비스별 `.env` 파일을 설정합니다.
-
-**scraper-service/.env**:
-```bash
-TRADINGVIEW_USERNAME=your_username
-TRADINGVIEW_PASSWORD=your_password
-```
-
-### 3. SSH 터널 시작
-
-원격 MySQL 데이터베이스에 접근하기 위해 SSH 터널이 필요합니다.
-
-```bash
-ssh -f -N -L 3306:127.0.0.1:5100 ahnbi2@ahnbi2.suwon.ac.kr
-```
-
-### 4. 서비스 시작
-
-**모든 서비스 시작**:
-```bash
+# SSH 터널 + Docker 서비스 전체 시작
 ./start.sh
+
+# 또는 Docker만
+docker-compose up -d
 ```
 
-**특정 서비스만 시작**:
-```bash
-./start.sh web-dashboard    # 웹 대시보드만
-./start.sh ml-service       # ML 서비스만
-```
-
-### 5. 서비스 접속
-
-| 서비스 | 로컬 URL | 프로덕션 URL |
-|--------|----------|--------------|
-| 웹 대시보드 | http://localhost/ | http://ahnbi2.suwon.ac.kr/ |
-| API 문서 | http://localhost/docs | http://ahnbi2.suwon.ac.kr/docs |
-| 모니터링 | http://localhost/monitor | http://ahnbi2.suwon.ac.kr/monitor |
-
-## 서비스 관리
-
-### 서비스 중지
+### 2. KIS API 설정 (자동매매용)
 
 ```bash
-./stop.sh    # Docker 컨테이너 중지 (SSH 터널 유지)
+# trading-service/.env 편집
+cp trading-service/.env.example trading-service/.env
+vim trading-service/.env
+
+# 필수 설정:
+# KIS_APP_KEY=your_app_key
+# KIS_APP_SECRET=your_app_secret
+# KIS_ACCOUNT_NUMBER=XXXXXXXX-XX
+# TRADING_MODE=paper
 ```
 
-### 상태 확인
-
-```bash
-./status.sh   # 서비스 상태 및 API 헬스체크
-```
-
-### Docker 명령어
-
-```bash
-docker compose up -d        # 컨테이너 시작
-docker compose down         # 컨테이너 중지
-docker compose logs -f      # 로그 확인
-docker compose build        # 이미지 재빌드
-docker compose ps           # 컨테이너 상태
-```
-
-## API 엔드포인트
-
-### ml-service (포트 8000)
-
-| Method | 엔드포인트 | 설명 |
-|--------|-----------|------|
-| GET | `/health` | 헬스체크 |
-| GET | `/api/stocks` | 종목 목록 조회 |
-| POST | `/api/predictions/ranking` | 전체 종목 랭킹 예측 |
-| GET | `/api/predictions/ranking/latest` | 최신 랭킹 결과 |
-
-### scraper-service (포트 8001)
-
-| Method | 엔드포인트 | 설명 |
-|--------|-----------|------|
-| POST | `/api/jobs/full` | 전체 종목 스크래핑 시작 |
-| POST | `/api/jobs/cancel` | 스크래핑 작업 취소 |
-| GET | `/api/jobs/status` | 스크래핑 상태 조회 |
-| POST | `/api/jobs/retry` | 실패한 종목 재시도 |
-
-## 프로젝트 구조
-
-```
-etf-trading-project/
-├── docker-compose.yml          # Docker Compose 설정
-├── start.sh                    # 서비스 시작 스크립트
-├── stop.sh                     # 서비스 중지 스크립트
-├── status.sh                   # 상태 확인 스크립트
-│
-├── ml-service/                 # ML 예측 서비스
-│   ├── app/
-│   │   ├── main.py             # FastAPI 진입점
-│   │   ├── routers/            # API 라우터
-│   │   └── services/           # 비즈니스 로직
-│   └── data/                   # SQLite DB, 모델 파일
-│
-├── web-dashboard/              # Next.js 대시보드
-│   ├── app/                    # Next.js 페이지
-│   ├── components/             # React 컴포넌트
-│   └── lib/                    # API 연동
-│
-├── scraper-service/            # 스크래핑 서비스
-│   ├── app/
-│   │   ├── main.py             # FastAPI 진입점
-│   │   └── services/           # 스크래핑 로직
-│   └── scripts/                # 유틸리티 스크립트
-│
-├── auto-monitoring/            # 모니터링 대시보드
-│   ├── app/                    # Next.js 페이지
-│   └── lib/                    # 로그 파서
-│
-├── etf-model/                  # ML 모델 개발
-│   └── src/                    # 모델, 피처, 파이프라인
-│
-├── scripts/                    # 자동화 스크립트
-│   ├── predict-daily.sh        # 일일 예측
-│   └── train-monthly.sh        # 월간 학습
-│
-└── nginx/                      # Nginx 설정
-```
-
-## 로컬 개발
-
-### 웹 대시보드 개발
-
-```bash
-cd web-dashboard
-npm run dev      # 개발 서버 (http://localhost:3000)
-npm run build    # 프로덕션 빌드
-```
-
-### ML 모델 개발
-
-```bash
-cd etf-model
-pip install -r requirements.txt
-python src/pipeline.py              # 학습
-```
-
-### 스크래퍼 개발
-
-```bash
-cd scraper-service
-poetry install
-poetry run python app/main.py       # 로컬 실행
-```
-
-## 자동화
-
-### Cron 설정
+### 3. Cron 자동화 설정
 
 ```bash
 ./scripts/setup-cron.sh
 ```
 
-**설정된 작업**:
-- 매일 오전 8시: 전체 종목 예측
-- 매월 1일 새벽 3시: 모델 재학습
+### 4. 접속
 
-### 로그 위치
+| 서비스 | URL |
+|--------|-----|
+| 모니터링 대시보드 | http://localhost:3002/trading |
+| 메인 대시보드 | http://localhost |
+| Trading API Docs | http://localhost:8002/docs |
+| ML API Docs | http://localhost/docs |
 
-- `logs/cron.log` - cron 실행 요약
-- `logs/predict-YYYYMMDD.log` - 일일 예측 상세
-- `logs/train-YYYYMM.log` - 월간 학습 상세
+> 모니터링 대시보드 로그인: `ahnbi2` / `bigdata`
 
-## 트러블슈팅
+## 자동화 파이프라인
 
-### Docker 연결 실패
+### 일일 스케줄 (KST)
 
-```bash
-# Docker 데몬 확인
-docker ps
+| 시간 | 작업 | 실행 |
+|------|------|------|
+| 07:00 | 데이터 수집 (101종목 스크래핑) | cron → `run-pipeline.sh` |
+| ~09:00 | 피처 처리 (85개 피처 생성) | 파이프라인 자동 |
+| ~09:30 | ML 예측 (LightGBM 랭킹) | 파이프라인 자동 |
+| 23:30 | 자동매매 실행 (KIS API 주문) | APScheduler |
 
-# Colima/Docker Desktop 재시작 (macOS)
-colima restart
-```
+### 주간/월간
 
-### SSH 터널 연결 실패
+| 주기 | 작업 |
+|------|------|
+| 매주 일요일 02:00 | 수익률 업데이트 |
+| 매년 1/1 03:00 | 모델 재학습 |
+| 6시간마다 | 서비스 헬스체크 |
 
-```bash
-# 터널 상태 확인
-pgrep -f "ssh.*3306"
-
-# 터널 재시작
-ssh -f -N -L 3306:127.0.0.1:5100 ahnbi2@ahnbi2.suwon.ac.kr
-```
-
-### 포트 충돌
+### 수동 실행
 
 ```bash
-# 포트 사용 프로세스 확인
-lsof -ti:8000
-lsof -ti:3000
+# 전체 파이프라인 (수집→정제→예측)
+./scripts/run-pipeline.sh
+
+# 파이프라인 + 즉시 매매 실행
+./scripts/run-pipeline.sh --execute-trading
+
+# 매매만 실행
+./scripts/execute-trading.sh
+
+# 매매 상태 확인
+./scripts/execute-trading.sh --status
+
+# 서비스 헬스체크
+./scripts/check-services.sh
 ```
 
-### 스크래핑 작업 제어
+## 매매 전략
 
-```bash
-# 스크래핑 시작
-curl -X POST http://localhost:8001/api/jobs/full
+- **63거래일 FIFO 순환매매**
+- 일일 예산 = 총 자금 / 63
+- **70%**: ML 랭킹 상위 종목 1주씩 매수 (예산 내)
+- **30%**: 고정 ETF (QQQ) 매수
+- Day 64부터: Day 1 매수분 자동 매도 → 재매수
+- **정수 매매** (1주 단위, 소수점 미지원)
 
-# 스크래핑 취소
-curl -X POST http://localhost:8001/api/jobs/cancel
+## 모니터링 대시보드
 
-# 상태 확인
-curl http://localhost:8001/api/jobs/status
+| 페이지 | 기능 |
+|--------|------|
+| 대시보드 | 포트폴리오 요약, KIS 잔고(USD/KRW), 자동매매 제어 |
+| 데이터 수집 | 스크래핑 Start/Stop, 실시간 로그 |
+| 데이터 전처리 | 피처 엔지니어링 상태, DB 건강도 |
+| ML 모니터링 | 랭킹 테이블, 종목 클릭→TradingView 차트+63일 예측 |
+| 파이프라인 | 전체 파이프라인 상태 |
+| 포트폴리오 | 보유 종목, 손익 |
+| 달력 | 일별 매매 내역 |
+| DB 뷰어 | 500+ 테이블 그리드, 원본보기, 시각화 |
+| 설정 | 파이프라인 Start/Stop, KIS API 상태, 개발자 옵션 |
 
-# 실패한 종목 재시도
-curl -X POST http://localhost:8001/api/jobs/retry \
-  -H "Content-Type: application/json" \
-  -d '{"symbols": ["AAPL", "NVDA"]}'
+## 프로젝트 구조
+
+```
+etf-trading-project/
+├── ml-service/              # ML 예측 서비스 (FastAPI)
+├── scraper-service/         # 데이터 수집 + 피처 처리 (FastAPI)
+├── trading-service/         # 자동매매 서비스 (FastAPI + KIS API)
+├── trading-monitor/         # 모니터링 대시보드 (Next.js)
+├── web-dashboard/           # 메인 대시보드 (Next.js)
+├── auto-monitoring/         # 스크래핑 모니터링
+├── nginx/                   # 리버스 프록시 설정
+├── scripts/                 # 자동화 스크립트
+│   ├── run-pipeline.sh      # 전체 파이프라인
+│   ├── execute-trading.sh   # 수동 매매 실행
+│   ├── check-services.sh    # 서비스 헬스체크
+│   └── setup-cron.sh        # cron 설정
+├── docker-compose.yml       # Docker 서비스 정의
+├── start.sh                 # 전체 시작
+├── stop.sh                  # 전체 중지
+└── status.sh                # 상태 확인
 ```
 
-## 문서
+## 환경 변수
 
-- [인수인계 문서](./HANDOVER.md) - 상세 시스템 아키텍처 및 운영 가이드
-- [CLAUDE.md](./CLAUDE.md) - 프로젝트 개발 가이드라인
-- [Scraper Service 문서](./scraper-service/CLAUDE.md)
+### trading-service/.env
 
-## 라이선스
+| 변수 | 설명 | 기본값 |
+|------|------|--------|
+| `KIS_APP_KEY` | 한국투자증권 API Key | - |
+| `KIS_APP_SECRET` | 한국투자증권 API Secret | - |
+| `KIS_ACCOUNT_NUMBER` | 계좌번호 (XXXXXXXX-XX) | - |
+| `TRADING_MODE` | paper (모의) / live (실투자) | paper |
+| `STRATEGY_RATIO` | AI 전략 비율 | 0.7 |
+| `FIXED_RATIO` | 고정 ETF 비율 | 0.3 |
+| `FIXED_ETF_CODES` | 고정 ETF 목록 | ["QQQ"] |
+| `TRADE_HOUR_KST` | 매매 실행 시간 (시) | 23 |
+| `TRADE_MINUTE_KST` | 매매 실행 시간 (분) | 30 |
 
-Copyright © 2026 ETF Trading Project
+## 로그
+
+모든 로그는 **KST(한국 서울 시간)**으로 표시됩니다.
+
+```
+logs/
+├── pipeline-YYYYMMDD.log    # 파이프라인 실행 로그
+├── trading-YYYYMMDD.log     # 매매 실행 로그
+└── cron.log                 # cron 실행 요약
+```

@@ -47,3 +47,4 @@ logs/
 /data
 etf-model/stock_panel_data.parquet
 etf-model/
+.next/

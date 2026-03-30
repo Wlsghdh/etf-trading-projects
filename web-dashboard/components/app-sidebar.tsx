@@ -8,6 +8,7 @@ import {
   Home,
   LineChart,
   TrendingUp,
+  Zap,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -39,6 +40,11 @@ const menuItems = [
     title: "포트폴리오",
     url: "/portfolio",
     icon: Briefcase,
+  },
+  {
+    title: "자동매매",
+    url: "/trading",
+    icon: Zap,
   },
   {
     title: "수익률 분석",

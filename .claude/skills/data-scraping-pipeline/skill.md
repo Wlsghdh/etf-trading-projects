@@ -1,11 +1,11 @@
 ---
 name: data-scraping-pipeline
 description: |
-  TradingView 데이터 스크래핑 자동화 파이프라인 가이드.
-  사용 시점: (1) 스크래퍼 실행 방법 문의 시, (2) 데이터 파이프라인 아키텍처 이해 필요 시,
-  (3) DB 업로드 설정/디버깅 시, (4) 스크래핑 자동화 확장 작업 시.
+  사용자가 TradingView 스크래퍼 실행 방법, 데이터 파이프라인 아키텍처, DB 업로드
+  설정/디버깅, 스크래핑 자동화 확장에 대해 질문하면 이 스킬을 호출하라.
+  스크래퍼 관련 코드를 수정하거나 디버깅할 때도 이 스킬의 구조 정보를 참조하라.
   Triggers: TradingView scraper, data scraping, 주가 데이터, CSV 다운로드, DB 업로드,
-  SSH tunnel, 자동화 파이프라인, Playwright.
+  SSH tunnel, 자동화 파이프라인, Playwright, cron, scrape-daily.
 ---
 
 # Data Scraping Pipeline

@@ -1,6 +1,6 @@
 ---
 name: verify-ml-service
-description: ml-service의 AhnLab LightGBM 모델 로딩, 랭킹 API, processed DB 연결, 스키마/모델 일관성을 검증합니다. ml-service 파일 변경 후 사용.
+description: ml-service/ 하위 파일(서비스, 라우터, 모델, 스키마, 학습 스크립트)을 변경한 후 이 스킬을 실행하여 구조 일관성을 검증하라. PR 전 ml-service 관련 변경사항 검증 시에도 반드시 사용하라.
 disable-model-invocation: true
 ---
 

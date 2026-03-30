@@ -29,6 +29,12 @@ except ImportError:
     HAS_LIGHTGBM = False
 
 try:
+    import xgboost as xgb
+    HAS_XGBOOST = True
+except ImportError:
+    HAS_XGBOOST = False
+
+try:
     import joblib
     HAS_JOBLIB = True
 except ImportError:
@@ -80,12 +86,31 @@ class AhnLabEnsemble:
         return preds
 
 
+class XGBRegressorEnsemble:
+    """Ensemble of XGBoost Booster models for regression prediction."""
+
+    def __init__(self, boosters: List["xgb.Booster"]):
+        self.boosters = boosters
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Predict using ensemble averaging across all fold models."""
+        X_clean = X.replace([np.inf, -np.inf], np.nan).fillna(0)
+        feature_names = list(X_clean.columns) if hasattr(X_clean, 'columns') else None
+        dmatrix = xgb.DMatrix(X_clean, feature_names=feature_names)
+        preds = np.zeros(len(X_clean), dtype=float)
+        for booster in self.boosters:
+            preds += booster.predict(dmatrix)
+        preds /= len(self.boosters)
+        return preds
+
+
 class ModelLoader:
     """
     Load and manage trained ML models.
 
     Supports:
     - AhnLab LightGBM: data/models/ahnlab_lgbm/current/ (symlink to version dir)
+    - Price Regressor XGBoost: data/models/price_regressor/current/ (symlink to version dir)
     - Legacy: data/models/{name}.pkl or .joblib
     """
 
@@ -100,6 +125,10 @@ class ModelLoader:
         self._current_model: Optional[Any] = None
         self._current_metadata: Optional[ModelMetadata] = None
 
+        # Separate slot for regression model (can coexist with ranking model)
+        self._regressor_model: Optional[XGBRegressorEnsemble] = None
+        self._regressor_metadata: Optional[ModelMetadata] = None
+
         logger.info(f"ModelLoader initialized with models directory: {self.models_dir}")
 
     def list_available_models(self) -> List[ModelMetadata]:
@@ -113,6 +142,13 @@ class ModelLoader:
             if metadata:
                 models.append(metadata)
 
+        # Check for Price Regressor XGBoost model
+        regressor_dir = self.models_dir / "price_regressor"
+        if regressor_dir.is_dir():
+            metadata = self._load_regressor_metadata(regressor_dir)
+            if metadata:
+                models.append(metadata)
+
         # Check for .pkl and .joblib files
         for ext in ["*.pkl", "*.joblib"]:
             for model_path in self.models_dir.glob(ext):
@@ -120,9 +156,9 @@ class ModelLoader:
                 metadata = self._extract_metadata(name, model_path)
                 models.append(metadata)
 
-        # Check for subdirectories with model.pkl (exclude ahnlab_lgbm)
+        # Check for subdirectories with model.pkl (exclude known model dirs)
         for model_dir in self.models_dir.iterdir():
-            if model_dir.is_dir() and model_dir.name != "ahnlab_lgbm":
+            if model_dir.is_dir() and model_dir.name not in ("ahnlab_lgbm", "price_regressor"):
                 model_file = model_dir / "model.pkl"
                 if model_file.exists():
                     metadata = self._extract_metadata(model_dir.name, model_file)
@@ -224,6 +260,10 @@ class ModelLoader:
         # AhnLab LightGBM special handling
         if model_name == "ahnlab_lgbm":
             return self._load_ahnlab_model()
+
+        # Price Regressor XGBoost special handling
+        if model_name == "price_regressor":
+            return self._load_regressor_model()
 
         # Legacy model loading
         model_path = self._find_model_path(model_name)
@@ -341,6 +381,130 @@ class ModelLoader:
         self._current_model = ensemble
         logger.info(f"AhnLab ensemble loaded: {len(models)} fold models from {model_dir}")
         return ensemble
+
+    def _load_regressor_metadata(self, regressor_dir: Path) -> Optional[ModelMetadata]:
+        """Load metadata for Price Regressor XGBoost model."""
+        current_dir = regressor_dir / "current"
+        if current_dir.is_symlink() or current_dir.is_dir():
+            resolved = current_dir.resolve()
+        else:
+            version_dirs = sorted(
+                [d for d in regressor_dir.iterdir() if d.is_dir() and d.name.startswith("v")],
+                reverse=True,
+            )
+            if version_dirs:
+                resolved = version_dirs[0]
+            else:
+                fold_files = list(regressor_dir.glob("*_fold*.json"))
+                if fold_files:
+                    resolved = regressor_dir
+                else:
+                    return None
+
+        fold_files = list(resolved.glob("*_fold*.json"))
+        if not fold_files:
+            return None
+
+        metadata_file = resolved / "metadata.json"
+        if metadata_file.exists():
+            with open(metadata_file) as f:
+                meta = json.load(f)
+            return ModelMetadata(
+                name="price_regressor",
+                version=meta.get("version", "unknown"),
+                description="XGBoost Regression Model (63-day price prediction)",
+                model_type="xgboost",
+                trained_at=meta.get("trained_at"),
+                feature_count=meta.get("n_features", 85),
+                params=meta.get("xgb_params", {}),
+                file_path=str(resolved),
+            )
+
+        return ModelMetadata(
+            name="price_regressor",
+            description="XGBoost Regression Model (63-day price prediction)",
+            model_type="xgboost",
+            feature_count=85,
+            file_path=str(resolved),
+        )
+
+    def _load_regressor_model(self) -> XGBRegressorEnsemble:
+        """Load Price Regressor XGBoost ensemble from fold .json files."""
+        if not HAS_XGBOOST:
+            raise ImportError("xgboost is required for price regressor. Install with: pip install xgboost")
+
+        regressor_dir = self.models_dir / "price_regressor"
+
+        current_dir = regressor_dir / "current"
+        if current_dir.is_symlink() or current_dir.is_dir():
+            model_dir = current_dir.resolve()
+        else:
+            version_dirs = sorted(
+                [d for d in regressor_dir.iterdir() if d.is_dir() and d.name.startswith("v")],
+                reverse=True,
+            )
+            if version_dirs:
+                model_dir = version_dirs[0]
+            else:
+                model_dir = regressor_dir
+
+        fold_files = sorted(model_dir.glob("*_fold*.json"))
+        if not fold_files:
+            raise FileNotFoundError(
+                f"No fold .json files found in {model_dir}. "
+                f"Expected files like price_regressor_fold0.json, price_regressor_fold1.json. "
+                f"Run scripts/train_regressor.py to train the model."
+            )
+
+        boosters = []
+        for fold_path in fold_files:
+            booster = xgb.Booster(model_file=str(fold_path))
+            boosters.append(booster)
+            logger.info(f"Loaded XGBoost booster from {fold_path}")
+
+        ensemble = XGBRegressorEnsemble(boosters)
+
+        metadata_file = model_dir / "metadata.json"
+        if metadata_file.exists():
+            with open(metadata_file) as f:
+                meta = json.load(f)
+            self._regressor_metadata = ModelMetadata(
+                name="price_regressor",
+                version=meta.get("version", "unknown"),
+                description="XGBoost Regression Model (63-day price prediction)",
+                model_type="xgboost",
+                trained_at=meta.get("trained_at"),
+                feature_count=meta.get("n_features", 85),
+                params=meta.get("xgb_params", {}),
+                file_path=str(model_dir),
+            )
+        else:
+            self._regressor_metadata = ModelMetadata(
+                name="price_regressor",
+                description="XGBoost Regression Model (63-day price prediction)",
+                model_type="xgboost",
+                feature_count=85,
+                file_path=str(model_dir),
+            )
+
+        self._regressor_model = ensemble
+        logger.info(f"Price regressor ensemble loaded: {len(boosters)} fold models from {model_dir}")
+        return ensemble
+
+    def get_regressor(self) -> Optional[XGBRegressorEnsemble]:
+        """Get loaded regression model (separate from ranking model)."""
+        return self._regressor_model
+
+    def get_regressor_metadata(self) -> Optional[ModelMetadata]:
+        """Get metadata of loaded regression model."""
+        return self._regressor_metadata
+
+    def load_regressor(self) -> XGBRegressorEnsemble:
+        """Load the price regressor model (separate from load_model for ranking)."""
+        if self._regressor_model is not None:
+            logger.info("Price regressor already loaded, using cached")
+            return self._regressor_model
+        return self._load_regressor_model()
 
     def _find_model_path(self, model_name: str) -> Optional[Path]:
         """Find the model file for a given model name."""

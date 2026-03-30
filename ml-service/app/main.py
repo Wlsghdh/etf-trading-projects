@@ -5,7 +5,7 @@ import logging
 
 from app.config import settings
 from app.database import init_local_db
-from app.routers import health, data, predictions, factsheet
+from app.routers import health, data, predictions, factsheet, db_viewer
 from app.services.model_loader import get_model_loader
 
 # 로깅 설정
@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
         for m in available_models:
             logger.debug(f"  - {m.name} ({m.model_type})")
 
-        # Load default model
+        # Load default ranking model
         try:
             model_loader.load_model(settings.default_model)
             logger.info(f"Default model loaded: {settings.default_model}")
@@ -41,6 +41,18 @@ async def lifespan(app: FastAPI):
                 f"Default model {settings.default_model} not found. "
                 f"Run scripts/train_ahnlab.py to train the model."
             )
+
+        # Load price regressor model (optional)
+        try:
+            model_loader.load_regressor()
+            logger.info("Price regressor model loaded")
+        except FileNotFoundError:
+            logger.info(
+                "Price regressor model not found (optional). "
+                "Run scripts/train_regressor.py to train."
+            )
+        except ImportError:
+            logger.info("xgboost not installed, price regressor unavailable")
     except Exception as e:
         logger.warning(f"ModelLoader initialization failed: {e}")
 
@@ -81,6 +93,7 @@ app.include_router(health.router, tags=["Health"])
 app.include_router(data.router, prefix="/api/data", tags=["Data"])
 app.include_router(predictions.router, prefix="/api/predictions", tags=["Predictions"])
 app.include_router(factsheet.router, prefix="/api/factsheet", tags=["Factsheet"])
+app.include_router(db_viewer.router, prefix="/api/db", tags=["DB Viewer"])
 
 
 @app.get("/")

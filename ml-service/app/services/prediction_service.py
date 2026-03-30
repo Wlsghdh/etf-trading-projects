@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from app.models import Prediction
-from app.services.model_loader import ModelLoader, get_model_loader, ModelMetadata
+from app.services.model_loader import ModelLoader, get_model_loader, ModelMetadata, XGBRegressorEnsemble
 from app.services.processed_data_service import ProcessedDataService, ALL_FEATURE_COLS
 
 logger = logging.getLogger(__name__)
@@ -251,6 +251,65 @@ class PredictionService:
             next_day += timedelta(days=1)
 
         return next_day
+
+    def _ensure_regressor_loaded(self) -> bool:
+        """Try to load the price regressor model. Returns True if available."""
+        try:
+            if self.model_loader.get_regressor() is None:
+                self.model_loader.load_regressor()
+            return True
+        except (FileNotFoundError, ImportError):
+            return False
+
+    def predict_forecast(
+        self,
+        symbol: str,
+        timeframe: str = "D",
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Predict 63-day future return for a symbol using XGBoost regression model.
+
+        Returns:
+            Dict with forecast data, or None if regressor model is not available.
+            - symbol: str
+            - current_close: float
+            - predicted_return: float (target_3m, e.g. 0.15 = +15%)
+            - predicted_close: float (current_close * (1 + predicted_return))
+            - model_name: str
+            - model_version: str
+        """
+        if not self._ensure_regressor_loaded():
+            return None
+
+        regressor = self.model_loader.get_regressor()
+        if regressor is None:
+            return None
+
+        # Get features for this symbol
+        features_df = self.data_service.get_features(symbol, timeframe, limit=1)
+        if features_df.empty:
+            raise ValueError(f"No feature data for {symbol} in etf2_db_processed")
+
+        latest = features_df.iloc[-1]
+        avail_cols = [c for c in ALL_FEATURE_COLS if c in features_df.columns]
+        X = features_df[avail_cols].iloc[[-1]]
+
+        predicted_return = float(regressor.predict(X)[0])
+
+        current_close = float(latest["close"]) if "close" in latest and pd.notna(latest["close"]) else 0.0
+        predicted_close = current_close * (1.0 + predicted_return)
+
+        metadata = self.model_loader.get_regressor_metadata()
+
+        return {
+            "symbol": symbol,
+            "current_close": round(current_close, 2),
+            "predicted_return": round(predicted_return, 6),
+            "predicted_close": round(predicted_close, 2),
+            "forecast_days": 63,
+            "model_name": "price_regressor",
+            "model_version": metadata.version if metadata else None,
+        }
 
     def get_predictions(
         self,

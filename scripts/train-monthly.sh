@@ -1,14 +1,15 @@
 #!/bin/bash
 # 매월 모델 학습/업데이트 스크립트
-# cron: 0 3 1 * * /Users/jeong-uchang/etf-trading-project/scripts/train-monthly.sh
+# cron: 0 3 1 * * /home/jjh0709/git/etf-trading-project/scripts/train-monthly.sh
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # PATH 설정 (cron 환경용)
-export PATH="/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:$PATH"
-export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
 
-LOG_DIR="/Users/jeong-uchang/etf-trading-project/logs"
+LOG_DIR="$PROJECT_DIR/logs"
 LOG_FILE="$LOG_DIR/train-$(date +%Y%m).log"
-PROJECT_DIR="/Users/jeong-uchang/etf-trading-project"
 
 mkdir -p "$LOG_DIR"
 
@@ -43,12 +44,18 @@ COUNT=$(echo "$PREDICTIONS" | python3 -c "import sys,json; print(json.load(sys.s
 
 echo "📊 저장된 예측 수: $COUNT" >> "$LOG_FILE"
 
-# 3. TODO: 향후 고급 ML 모델 학습 로직 추가
-# - LSTM/Transformer 모델 학습
-# - MLflow로 실험 추적
-# - 모델 버전 관리
+# 3. 실제 모델 재학습 실행
+echo "🔄 모델 재학습 시작..." >> "$LOG_FILE"
 
-echo "⚠️  현재 MVP 버전: 고급 ML 학습은 향후 구현 예정" >> "$LOG_FILE"
+docker exec etf-ml-service python scripts/train_ahnlab.py 2>&1 | tee -a "$LOG_FILE"
+TRAIN_EXIT=$?
+
+if [ $TRAIN_EXIT -eq 0 ]; then
+    echo "✅ 모델 재학습 완료" >> "$LOG_FILE"
+else
+    echo "❌ 모델 재학습 실패 (exit code: $TRAIN_EXIT)" >> "$LOG_FILE"
+fi
+
 echo "" >> "$LOG_FILE"
 
 # 4. 예측 DB 정리 (90일 이상 된 데이터 삭제 - 옵션)

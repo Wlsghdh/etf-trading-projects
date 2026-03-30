@@ -491,7 +491,7 @@ class TradingViewScraper:
 
             await asyncio.sleep(0.5)
 
-            async with self.page.expect_download(timeout=30000) as download_info:
+            async with self.page.expect_download(timeout=60000) as download_info:
                 download_btn = self.page.get_by_role("button", name="다운로드")
                 await download_btn.click()
 
@@ -703,7 +703,7 @@ class TradingViewScraper:
             elif completed > 0:
                 await task_info_manager.complete_retry_task(retry_id, JobStatus.PARTIAL)
             else:
-                await task_info_manager.complete_retry_task(retry_id, JobStatus.FAILED)
+                await task_info_manager.complete_retry_task(retry_id, JobStatus.ERROR)
         else:
             # full 모드
             if completed == len(job_info.symbols):
@@ -711,7 +711,7 @@ class TradingViewScraper:
             elif completed > 0:
                 await task_info_manager.update_job_status(JobStatus.PARTIAL)
             else:
-                await task_info_manager.update_job_status(JobStatus.FAILED)
+                await task_info_manager.update_job_status(JobStatus.ERROR)
 
         logger.info(f"\n{'=' * 50}")
         logger.info(f"Job 완료: {completed}/{total} 성공")

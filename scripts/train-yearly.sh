@@ -1,15 +1,16 @@
 #!/bin/bash
 # 연간 모델 학습 스크립트
 # 매년 1월 1일 새벽 3시 실행
-# cron: 0 3 1 1 * /path/to/scripts/train-yearly.sh
+# cron: 0 3 1 1 * /home/jjh0709/git/etf-trading-project/scripts/train-yearly.sh
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # PATH 설정 (cron 환경용)
-export PATH="/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:$PATH"
-export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
 
-LOG_DIR="/home/ahnbi2/etf-trading-project/logs"
+LOG_DIR="$PROJECT_DIR/logs"
 LOG_FILE="$LOG_DIR/train-$(date +%Y).log"
-PROJECT_DIR="/home/ahnbi2/etf-trading-project"
 
 mkdir -p "$LOG_DIR"
 
@@ -56,13 +57,15 @@ echo "📊 분석 대상 예측 수: $COUNT" >> "$LOG_FILE"
 echo "" >> "$LOG_FILE"
 echo "🔄 모델 재학습 시작..." >> "$LOG_FILE"
 
-# TODO: 실제 ML 모델 학습 로직
-# - 1년치 데이터로 새 모델 학습
-# - MLflow로 실험 추적
-# - 기존 모델과 성능 비교
-# - 우수한 모델로 교체
+docker exec etf-ml-service python scripts/train_ahnlab.py 2>&1 | tee -a "$LOG_FILE"
+TRAIN_EXIT=$?
 
-echo "⚠️  현재 MVP 버전: 고급 ML 학습은 향후 구현 예정" >> "$LOG_FILE"
+if [ $TRAIN_EXIT -eq 0 ]; then
+    echo "✅ 모델 재학습 완료" >> "$LOG_FILE"
+else
+    echo "❌ 모델 재학습 실패 (exit code: $TRAIN_EXIT)" >> "$LOG_FILE"
+fi
+
 echo "" >> "$LOG_FILE"
 
 # 5. 새해 첫 팩트시트 생성

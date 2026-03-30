@@ -3,22 +3,48 @@
 ## Project Overview
 ETF 주식 데이터 분석 및 예측을 위한 데이터 파이프라인 시스템. FastAPI 기반 ML 서비스가 Docker에서 실행되며, SSH 터널을 통해 원격 MySQL 데이터베이스에 접근합니다. Next.js 기반 웹 대시보드로 예측 결과와 포트폴리오를 시각화합니다.
 
-## (**중요**) 
+## (**중요**)
 
 프로젝트에 대한 전반적인 개요는 ai-etf-project skill 을 사용해줘
+
+## 절대 금지 규칙 (NEVER DO)
+
+아래 행동은 어떤 상황에서도 사용자 명시적 승인 없이 절대 수행하지 마라.
+
+### 파일/데이터 삭제 금지
+- **프로덕션 데이터 파일 삭제 금지**: `ml-service/data/`, `scraper-service/downloads/`, `logs/`, `*.db` 파일을 절대 삭제하지 마라
+- **모델 파일 삭제 금지**: `ml-service/data/models/` 하위의 학습된 모델 파일(`.txt`, `.json`)을 절대 삭제하지 마라
+- **쿠키/인증 파일 삭제 금지**: `cookies.json`, `.env`, SSH 키 파일을 절대 삭제하지 마라
+- **DB 테이블 DROP 금지**: `DROP TABLE`, `TRUNCATE`, `DELETE FROM` (WHERE 없이) 쿼리를 절대 실행하지 마라
+
+### 서비스 중단 행위 금지
+- **프로덕션 Docker 컨테이너 중지 금지**: `docker-compose down`, `docker stop` 을 사용자 확인 없이 실행하지 마라
+- **SSH 터널 종료 금지**: `pkill -f "ssh.*3306"` 을 사용자 확인 없이 실행하지 마라
+- **cron 작업 삭제 금지**: `crontab -r` 또는 기존 cron 항목 제거를 사용자 확인 없이 하지 마라
+
+### 코드베이스 보호
+- **기존 스킬 파일 삭제 금지**: `.claude/skills/` 하위 파일을 삭제하지 마라. 업데이트만 허용
+- **CLAUDE.md 전체 덮어쓰기 금지**: 부분 편집(Edit)만 사용하라. Write로 전체 교체하지 마라
+- **git force push 금지**: `git push --force`, `git push -f` 를 절대 실행하지 마라
+- **main 브랜치 직접 커밋 금지**: 항상 feature 브랜치에서 작업하라
+
+### 외부 시스템 주의
+- **원격 서버 직접 명령 금지**: `ssh ahnbi2@... 'rm ...'` 등 원격 서버에서의 파괴적 명령을 실행하지 마라
+- **API 키/비밀번호 노출 금지**: 코드, 커밋 메시지, 로그에 인증 정보를 평문으로 포함하지 마라
 
 ## 커스텀 검증 및 유지보수 스킬
 
 커스텀 검증 및 유지보수 스킬은 `.claude/skills/`에 정의되어 있습니다.
 
-| Skill | Purpose |
-|-------|---------|
-| `verify-implementation` | 프로젝트의 모든 verify 스킬을 순차 실행하여 통합 검증 보고서를 생성합니다 |
-| `manage-skills` | 세션 변경사항을 분석하고, 검증 스킬을 생성/업데이트하며, CLAUDE.md를 관리합니다 |
-| `verify-feature-layer` | Feature layer(Domain → API → Hooks) 구조 일관성을 검증합니다 |
-| `verify-e2e-tests` | E2E 테스트 패턴 일관성을 검증합니다 (helpers, page objects, hybrid 전략) |
-| `verify-ml-service` | ml-service의 AhnLab 모델 로딩, 랭킹 API, processed DB 연결, 스키마/모델 일관성을 검증합니다 |
-| `verify-scraper-service` | scraper-service의 DB 서비스, 피처 파이프라인, API 엔드포인트, 스크래퍼 구조를 검증합니다 |
+| Skill | 호출 조건 |
+|-------|----------|
+| `ai-etf-project` | 프로젝트 목적, 비즈니스 모델, AI ETF 운용 구조, 규제 대응에 대한 질문 시 호출하라 |
+| `data-scraping-pipeline` | TradingView 스크래퍼 실행, 데이터 파이프라인, DB 업로드 관련 질문/작업 시 호출하라 |
+| `db-ssh-tunneling` | SSH 터널, 원격 MySQL 연결, Docker DB 접근, 연결 오류 디버깅 시 호출하라 |
+| `verify-implementation` | 기능 구현 완료 후, PR 전, 코드 리뷰 시 모든 verify 스킬을 통합 실행하라 |
+| `manage-skills` | 코드 변경 후 검증 스킬 커버리지 누락 점검, 새 verify 스킬 생성/업데이트 시 호출하라 |
+| `verify-ml-service` | ml-service/ 하위 파일 변경 후 구조 일관성 검증 시 실행하라 |
+| `verify-scraper-service` | scraper-service/ 하위 파일 변경 후 구조 일관성 검증 시 실행하라 |
 
 ## Architecture
 ```mermaid

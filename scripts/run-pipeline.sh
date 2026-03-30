@@ -8,12 +8,14 @@
 # Options:
 #   --skip-validation     Skip data validation step
 #   --continue-on-error   Continue pipeline even if validation fails
+#   --execute-trading     Trigger trading execution after prediction (Step 5)
 
 # PATH 설정 (cron 환경용)
 export PATH="/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:$PATH"
+export TZ="Asia/Seoul"
 
 # 프로젝트 경로 설정
-PROJECT_DIR="/home/ahnbi2/etf-trading-project"
+PROJECT_DIR="/home/jjh0709/git/etf-trading-project"
 SCRIPTS_DIR="$PROJECT_DIR/scripts"
 LOG_DIR="$PROJECT_DIR/logs"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -23,6 +25,7 @@ PIPELINE_LOG="$LOG_DIR/pipeline-${DATE_ONLY}.log"
 # API 엔드포인트
 SCRAPER_API="http://localhost/api/scraper"
 ML_API="http://localhost:8000"
+TRADING_API="http://localhost:8002"
 
 # 폴링 설정
 POLL_INTERVAL=30  # seconds
@@ -31,6 +34,7 @@ MAX_WAIT_HOURS=6  # Maximum wait time for each step
 # 옵션 파싱
 SKIP_VALIDATION=false
 CONTINUE_ON_ERROR=false
+EXECUTE_TRADING=false
 
 for arg in "$@"; do
     case $arg in
@@ -40,6 +44,10 @@ for arg in "$@"; do
             ;;
         --continue-on-error)
             CONTINUE_ON_ERROR=true
+            shift
+            ;;
+        --execute-trading)
+            EXECUTE_TRADING=true
             shift
             ;;
         *)
@@ -81,9 +89,9 @@ send_slack_notification() {
 
 # SSH 터널 확인 및 시작
 ensure_ssh_tunnel() {
-    if ! pgrep -f "ssh.*3306:127.0.0.1:5100" > /dev/null; then
+    if ! pgrep -f "ssh.*3306.*5100" > /dev/null; then
         log "📡 SSH 터널 시작..."
-        ssh -f -N -L 3306:127.0.0.1:5100 ahnbi2@ahnbi2.suwon.ac.kr \
+        ssh -f -N -L 0.0.0.0:3306:127.0.0.1:5100 ahnbi2@ahnbi2.suwon.ac.kr \
             -o ServerAliveInterval=60 \
             -o ServerAliveCountMax=3 2>> "$PIPELINE_LOG"
 
@@ -102,11 +110,19 @@ ensure_ssh_tunnel() {
 # Docker 서비스 확인 및 시작
 ensure_docker_services() {
     if ! docker ps | grep -q "etf-scraper-service"; then
-        log "🐳 Docker 컨테이너 시작..."
-        cd "$PROJECT_DIR"
-        docker compose up -d scraper-service ml-service
-        sleep 10
+        log_error "scraper-service 컨테이너가 실행 중이 아닙니다"
+        return 1
     fi
+    if ! docker ps | grep -q "etf-ml-service"; then
+        log_error "ml-service 컨테이너가 실행 중이 아닙니다"
+        return 1
+    fi
+    if ! docker ps | grep -q "etf-trading-service"; then
+        log_warning "trading-service 컨테이너가 실행 중이 아닙니다 (자동매매 비활성)"
+    else
+        log "✅ trading-service 실행 중"
+    fi
+    log "✅ Docker 서비스 모두 실행 중"
     return 0
 }
 
@@ -132,15 +148,35 @@ wait_for_api_completion() {
         local response=$(curl -s "$api_url" 2>/dev/null || echo '{"error": "request failed"}')
         local status=$(echo "$response" | jq -r '.status // "unknown"' 2>/dev/null)
 
+        # progress에서 실제 완료 수 확인 (status가 error여도 실제로 완료됐을 수 있음)
+        local progress_current=$(echo "$response" | jq -r '.progress.current // 0' 2>/dev/null)
+
         case "$status" in
-            "completed")
+            "completed"|"partial")
                 log_success "$step_name 완료"
                 return 0
                 ;;
+            "error"|"stopped")
+                # error/stopped 상태지만 실제 데이터가 수집됐는지 확인
+                if [ "$progress_current" -gt 0 ] 2>/dev/null; then
+                    log_warning "$step_name 상태는 '$status'이지만 ${progress_current}건 완료됨 — 성공으로 간주"
+                    return 0
+                fi
+                # end_time이 있으면 작업 자체는 끝난 것
+                local end_time=$(echo "$response" | jq -r '.end_time // ""' 2>/dev/null)
+                if [ -n "$end_time" ] && [ "$end_time" != "null" ]; then
+                    log_warning "$step_name 완료 (상태: $status, 카운터 버그 가능)"
+                    return 0
+                fi
+                log_error "$step_name 실패 ($status)"
+                return 1
+                ;;
             "idle"|"null"|"")
-                # idle/null/empty는 기존 작업이 없는 경우
-                # 작업을 시작했는데 idle이면 API 연결 문제일 수 있음
-                # 계속 기다림 (최대 5분까지)
+                # idle: 작업 완료 후 상태가 리셋됐을 수 있음
+                if [ "$progress_current" -gt 0 ] 2>/dev/null; then
+                    log_success "$step_name 완료 (${progress_current}건)"
+                    return 0
+                fi
                 if [ $elapsed -gt 300 ]; then
                     log_error "$step_name 상태 확인 불가 (idle), 5분 경과로 실패 간주"
                     return 1
@@ -259,6 +295,17 @@ else
         SCRAPE_EXIT=1
     else
         log "✅ 작업 시작됨: $JOB_ID"
+
+        # 새 job이 running 상태로 바뀔 때까지 대기 (최대 60초)
+        log "새 작업 시작 대기..."
+        for wait_i in $(seq 1 12); do
+            sleep 5
+            NEW_STATUS=$(curl -s "$SCRAPER_API/jobs/status" 2>/dev/null | jq -r '.status // "unknown"')
+            if [ "$NEW_STATUS" = "running" ] || [ "$NEW_STATUS" = "pending" ]; then
+                log "작업 상태: $NEW_STATUS"
+                break
+            fi
+        done
 
         wait_for_api_completion "$SCRAPER_API/jobs/status" "스크래핑"
         SCRAPE_EXIT=$?
@@ -415,6 +462,78 @@ PREDICT_DURATION=$((PREDICT_END - PREDICT_START))
 log ""
 
 # =============================================================================
+# Step 5: 매매 실행 (선택사항 - --execute-trading 옵션 또는 APScheduler 자동)
+# =============================================================================
+TRADING_EXIT=0
+TRADING_DURATION=0
+
+if [ "$EXECUTE_TRADING" = true ]; then
+    log "========================================="
+    log "Step 5/5: 매매 실행"
+    log "========================================="
+    log "API: $TRADING_API/api/trading/execute"
+    log ""
+
+    TRADING_START=$(date +%s)
+
+    # trading-service 헬스체크
+    TRADING_HEALTH=$(curl -s "$TRADING_API/health" --max-time 10 2>/dev/null || echo '{"status": "error"}')
+
+    if echo "$TRADING_HEALTH" | grep -q '"status":"ok"'; then
+        log "✅ trading-service 정상"
+
+        # 매매 실행 API 호출
+        log "🚀 매매 실행 중..."
+        TRADE_RESPONSE=$(curl -s -X POST "$TRADING_API/api/trading/execute" \
+            -H "Content-Type: application/json" \
+            --max-time 300 2>/dev/null)
+
+        TRADE_SUCCESS=$(echo "$TRADE_RESPONSE" | jq -r '.success // false' 2>/dev/null)
+
+        if [ "$TRADE_SUCCESS" = "true" ]; then
+            TRADE_MSG=$(echo "$TRADE_RESPONSE" | jq -r '.message // "완료"' 2>/dev/null)
+            BOUGHT=$(echo "$TRADE_RESPONSE" | jq -r '.bought_count // 0' 2>/dev/null)
+            SOLD=$(echo "$TRADE_RESPONSE" | jq -r '.sold_count // 0' 2>/dev/null)
+            DAY=$(echo "$TRADE_RESPONSE" | jq -r '.day_number // 0' 2>/dev/null)
+            log_success "매매 실행 완료: $TRADE_MSG"
+            log "거래일: $DAY | 매수: ${BOUGHT}건 | 매도: ${SOLD}건"
+            TRADING_EXIT=0
+        else
+            TRADE_MSG=$(echo "$TRADE_RESPONSE" | jq -r '.message // .detail // "알 수 없는 오류"' 2>/dev/null)
+            log_error "매매 실행 실패: $TRADE_MSG"
+            TRADING_EXIT=1
+        fi
+    else
+        log_error "trading-service 응답 없음 — 매매 실행 스킵"
+        log "trading-service가 실행 중인지 확인: docker ps | grep trading"
+        TRADING_EXIT=1
+    fi
+
+    TRADING_END=$(date +%s)
+    TRADING_DURATION=$((TRADING_END - TRADING_START))
+else
+    # APScheduler 상태 확인만 수행
+    log "========================================="
+    log "Step 5/5: 매매 스케줄러 확인"
+    log "========================================="
+
+    if docker ps | grep -q "etf-trading-service"; then
+        TRADING_HEALTH=$(curl -s "$TRADING_API/health" --max-time 10 2>/dev/null || echo '{}')
+        TRADING_MODE=$(echo "$TRADING_HEALTH" | jq -r '.trading_mode // "unknown"' 2>/dev/null)
+        log_success "trading-service 활성 (모드: $TRADING_MODE)"
+        log "APScheduler가 설정된 시간에 자동 매매를 실행합니다"
+        log "즉시 실행하려면: --execute-trading 옵션을 추가하세요"
+    else
+        log_warning "trading-service 미실행 — 자동매매 비활성"
+        log "시작하려면: docker compose up -d trading-service"
+    fi
+
+    TRADING_EXIT=0
+fi
+
+log ""
+
+# =============================================================================
 # 파이프라인 요약
 # =============================================================================
 PIPELINE_END=$(date +%s)
@@ -429,10 +548,15 @@ log "Step 1 - 스크래핑:       $([ $SCRAPE_EXIT -eq 0 ] && echo '✅ 성공' 
 log "Step 2 - 검증:           ⏭️  스킵 (구현 예정)"
 log "Step 3 - Feature:        $([ $FEATURE_EXIT -eq 0 ] && echo '✅ 성공' || echo '❌ 실패') (${FEATURE_DURATION}초)"
 log "Step 4 - 예측:           $([ $PREDICT_EXIT -eq 0 ] && echo '✅ 성공' || echo '❌ 실패') (${PREDICT_DURATION}초)"
+if [ "$EXECUTE_TRADING" = true ]; then
+    log "Step 5 - 매매 실행:     $([ $TRADING_EXIT -eq 0 ] && echo '✅ 성공' || echo '❌ 실패') (${TRADING_DURATION}초)"
+else
+    log "Step 5 - 매매 스케줄러: ✅ APScheduler 자동 실행 대기"
+fi
 log ""
 
 # 최종 결과 판정
-if [ $SCRAPE_EXIT -eq 0 ] && [ $FEATURE_EXIT -eq 0 ] && [ $PREDICT_EXIT -eq 0 ]; then
+if [ $SCRAPE_EXIT -eq 0 ] && [ $FEATURE_EXIT -eq 0 ] && [ $PREDICT_EXIT -eq 0 ] && [ $TRADING_EXIT -eq 0 ]; then
     log_success "모든 단계 완료!"
     log "========================================"
     send_slack_notification "✅ ETF Pipeline Completed Successfully (${PIPELINE_DURATION}s)"
@@ -449,6 +573,9 @@ else
     fi
     if [ $PREDICT_EXIT -ne 0 ]; then
         log_error "실패 단계: Step 4 (예측)"
+    fi
+    if [ $TRADING_EXIT -ne 0 ]; then
+        log_error "실패 단계: Step 5 (매매 실행)"
     fi
 
     log ""

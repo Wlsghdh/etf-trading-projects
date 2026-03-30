@@ -105,18 +105,52 @@ async def get_status():
     """Get current job status."""
     job_info = await task_info_manager.get_job_info()
 
+    # task_info 기반 카운트
     completed = sum(1 for s in job_info.symbols.values() if s.status == SymbolStatus.COMPLETED)
     failed = sum(1 for s in job_info.symbols.values() if s.status == SymbolStatus.FAILED)
-    total = len(job_info.symbols)
+    total = len(job_info.symbols) or 101
+
+    # job_id가 없으면 DB에서 최근 job 가져오기, completed도 DB 기반으로 재계산
+    job_id = job_info.job_id if job_info.job_id != "initial" else None
+    try:
+        from sqlalchemy import create_engine, text
+        import os
+        db_url = os.getenv("DB_URL", "mysql+pymysql://ahnbi2:bigdata@172.17.0.1:3306/etf2_db")
+        engine = create_engine(db_url)
+        with engine.connect() as conn:
+            if not job_id:
+                result = conn.execute(text(
+                    "SELECT job_id FROM scraping_logs ORDER BY id DESC LIMIT 1"
+                ))
+                row = result.fetchone()
+                if row:
+                    job_id = row[0]
+
+            if job_id and completed == 0:
+                result2 = conn.execute(text(
+                    "SELECT COUNT(DISTINCT SUBSTRING_INDEX(SUBSTRING_INDEX(message, ' to ', -1), '_', 1)) "
+                    "FROM scraping_logs WHERE job_id = :job_id AND message LIKE :pattern"
+                ), {"job_id": job_id, "pattern": "Uploaded % rows to %"})
+                completed = result2.scalar() or 0
+        engine.dispose()
+    except Exception:
+        pass
+
+    # 완료 후 상태 보정
+    status_value = job_info.status.value
+    if completed > 0 and status_value == "error" and job_info.end_time:
+        status_value = "completed" if completed >= total else "partial"
+
+    error_symbols = [s.symbol for s in job_info.symbols.values() if s.status == SymbolStatus.FAILED]
 
     return JobStatusResponse(
-        job_id=job_info.job_id if job_info.job_id != "initial" else None,
-        status=job_info.status.value,
+        job_id=job_id,
+        status=status_value,
         progress={
             "current": completed,
             "total": total,
             "current_symbol": job_info.current_symbol,
-            "errors": [s.symbol for s in job_info.symbols.values() if s.status == SymbolStatus.FAILED]
+            "errors": error_symbols
         },
         current_symbol=job_info.current_symbol,
         start_time=job_info.start_time,

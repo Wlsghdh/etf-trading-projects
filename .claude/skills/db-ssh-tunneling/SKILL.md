@@ -1,3 +1,13 @@
+---
+name: db-ssh-tunneling
+description: |
+  사용자가 SSH 터널 설정, 원격 MySQL 연결, Docker에서의 DB 접근 방법에 대해 질문하면
+  이 스킬을 호출하라. DB 연결 오류 디버깅, 터널 상태 확인, docker-compose DB 설정
+  변경 시에도 이 스킬을 참조하라.
+  Triggers: SSH tunnel, 원격 DB, MySQL 연결, host.docker.internal, 포트 포워딩,
+  Connection refused, DB 연결 실패.
+---
+
 # SSH Tunneling for Remote Database Access
 
 ## Overview

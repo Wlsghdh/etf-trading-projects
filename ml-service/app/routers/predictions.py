@@ -19,6 +19,7 @@ from app.schemas import (
     PredictionWithPerformance,
     CandlestickForecastResponse,
     CandlestickData,
+    ForecastPriceResponse,
     RankingResponse,
     RankingItem,
     ModelInfoResponse,
@@ -220,30 +221,86 @@ def get_prediction_history(
     )
 
 
+@router.get("/forecast/{symbol}/price", response_model=ForecastPriceResponse)
+def get_price_forecast(
+    symbol: str,
+    service: PredictionService = Depends(get_prediction_service),
+):
+    """
+    63일 가격 예측 (XGBoost 회귀 모델)
+
+    회귀 모델이 로드되어 있으면 실제 예측 결과를 반환합니다.
+    모델이 없으면 404를 반환합니다.
+    """
+    try:
+        result = service.predict_forecast(symbol.upper())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Forecast failed: {str(e)}")
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Price regressor model not available. Run scripts/train_regressor.py first."
+        )
+
+    return ForecastPriceResponse(
+        symbol=result["symbol"],
+        current_close=result["current_close"],
+        predicted_return=result["predicted_return"],
+        predicted_close=result["predicted_close"],
+        forecast_days=result["forecast_days"],
+        model_name=result["model_name"],
+        model_version=result["model_version"],
+        generated_at=datetime.utcnow(),
+    )
+
+
 @router.get("/forecast/{symbol}", response_model=CandlestickForecastResponse)
 def get_candlestick_forecast(
     symbol: str,
     days: int = Query(90, ge=30, le=365, description="예측 일 수"),
-    current_price: Optional[float] = Query(None, description="현재가 (옵션)")
+    current_price: Optional[float] = Query(None, description="현재가 (옵션)"),
+    service: PredictionService = Depends(get_prediction_service),
 ):
-    """향후 N일간 캔들스틱 예측 데이터 (더미)"""
-    stock_info = get_stock_info(symbol.upper())
-    price = current_price if current_price else stock_info["current_price"]
+    """
+    향후 N일간 캔들스틱 예측 데이터
+
+    회귀 모델이 있으면 실제 predicted_return을 기반으로 생성합니다.
+    모델이 없으면 더미 데이터를 반환합니다.
+    """
+    symbol_upper = symbol.upper()
+
+    # Try real model prediction for drift
+    predicted_return = None
+    try:
+        forecast = service.predict_forecast(symbol_upper)
+        if forecast:
+            predicted_return = forecast["predicted_return"]
+            if current_price is None:
+                current_price = forecast["current_close"]
+    except Exception:
+        pass
+
+    if current_price is None:
+        stock_info = get_stock_info(symbol_upper)
+        current_price = stock_info["current_price"]
 
     candles_data = generate_candlestick_forecast(
-        symbol=symbol.upper(),
-        current_price=price,
-        days=days
+        symbol=symbol_upper,
+        current_price=current_price,
+        days=days,
     )
 
     candles = [CandlestickData(**c) for c in candles_data]
 
     return CandlestickForecastResponse(
-        symbol=symbol.upper(),
-        current_price=price,
+        symbol=symbol_upper,
+        current_price=current_price,
         forecast_days=days,
         data=candles,
-        generated_at=datetime.utcnow()
+        generated_at=datetime.utcnow(),
     )
 
 
