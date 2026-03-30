@@ -1,6 +1,6 @@
 ---
 name: verify-implementation
-description: 프로젝트의 모든 verify 스킬을 순차 실행하여 통합 검증 보고서를 생성합니다. 기능 구현 후, PR 전, 코드 리뷰 시 사용.
+description: 기능 구현 완료 후, PR 생성 전, 코드 리뷰 시 이 스킬을 실행하여 모든 verify 스킬을 순차 실행하고 통합 검증 보고서를 생성하라.
 disable-model-invocation: true
 argument-hint: "[선택사항: 특정 verify 스킬 이름]"
 ---

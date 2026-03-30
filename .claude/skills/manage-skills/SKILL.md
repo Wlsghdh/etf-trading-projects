@@ -1,6 +1,6 @@
 ---
 name: manage-skills
-description: 세션 변경사항을 분석하여 검증 스킬 누락을 탐지합니다. 기존 스킬을 동적으로 탐색하고, 새 스킬을 생성하거나 기존 스킬을 업데이트한 뒤 CLAUDE.md를 관리합니다.
+description: 세션에서 코드 변경 후 검증 스킬 커버리지 누락을 점검하려면 이 스킬을 호출하라. 새 verify 스킬을 생성하거나, 기존 스킬을 업데이트하고, CLAUDE.md 스킬 테이블을 동기화한다.
 disable-model-invocation: true
 argument-hint: "[선택사항: 특정 스킬 이름 또는 집중할 영역]"
 ---

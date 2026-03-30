@@ -1,6 +1,6 @@
 ---
 name: verify-scraper-service
-description: scraper-service의 DB 서비스, 피처 파이프라인, API 엔드포인트, 스크래퍼 구조 일관성을 검증합니다. scraper-service 파일 변경 후 사용.
+description: scraper-service/ 하위 파일(DB 서비스, 피처 파이프라인, API 엔드포인트, 스크래퍼)을 변경한 후 이 스킬을 실행하여 구조 일관성을 검증하라. PR 전 scraper-service 관련 변경사항 검증 시에도 반드시 사용하라.
 disable-model-invocation: true
 ---
 
