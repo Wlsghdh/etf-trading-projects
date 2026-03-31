@@ -393,8 +393,10 @@ async def execute_daily_trading(db: Session = None) -> dict:
         # 2. 잔고 조회 및 사이클 관리
         balance = await kis.get_balance()
         total_cash = balance.available_cash
+        _write_trading_log(db, "INFO", f"잔고 조회: ${total_cash:,.2f} (보유 {len(balance.holdings)}종목)")
         if total_cash <= 0:
             total_cash = 100_000  # 기본값 (모의투자 $100,000)
+            _write_trading_log(db, "WARNING", f"잔고 조회 불가, 기본 자금 ${total_cash:,.2f} 사용")
             logger.warning(
                 f"잔고 조회 불가, 기본 자금 ${total_cash:,.2f} 사용"
             )
@@ -407,8 +409,10 @@ async def execute_daily_trading(db: Session = None) -> dict:
         logger.info(f"=== 매매 실행: 사이클 {cycle.id}, 거래일 {day} ({mode_str}) ===")
 
         # 4. 랭킹 조회
+        _write_trading_log(db, "INFO", f"사이클 {cycle.id}, 거래일 {day} — ML 랭킹 조회 중...")
         rankings = await ranking_client.get_daily_ranking(settings.top_n_etfs)
         if not rankings:
+            _write_trading_log(db, "ERROR", "ml-service 랭킹 조회 실패 — 당일 매매 중단")
             return {
                 "success": False,
                 "message": "ml-service 랭킹 조회 실패 — 당일 매매 중단",
@@ -418,6 +422,8 @@ async def execute_daily_trading(db: Session = None) -> dict:
                 "sold_total": 0.0,
                 "bought_total": 0.0,
             }
+
+        _write_trading_log(db, "INFO", f"ML 랭킹 조회 성공: {len(rankings)}개 종목 (1위: {rankings[0].symbol})")
 
         sold_count = 0
         sold_total = 0.0
@@ -451,6 +457,7 @@ async def execute_daily_trading(db: Session = None) -> dict:
                     )
 
             logger.info(f"매도 완료: {sold_count}건, 총 ${sold_total:,.2f}")
+            _write_trading_log(db, "INFO", f"FIFO 매도 완료: {sold_count}건, ${sold_total:,.2f}")
 
         # 6. 미체결 이월 처리 (지정가 모드)
         carryover = 0.0
@@ -458,17 +465,20 @@ async def execute_daily_trading(db: Session = None) -> dict:
             carryover = _get_unfilled_carryover(db, cycle.id, today)
             if carryover > 0:
                 logger.info(f"전일 미체결 이월 금액: ${carryover:,.2f}")
+                _write_trading_log(db, "INFO", f"미체결 이월: ${carryover:,.2f} 추가")
 
         # 7. 일일 매수 예산 계산 (초기 자금 / 63 + 미체결 이월)
         daily_budget = capital_mgr.calculate_daily_budget(cycle.initial_capital)
         daily_budget += carryover  # 미체결 이월분 추가
         allocation = capital_mgr.calculate_allocation(daily_budget)
-        logger.info(
+        budget_msg = (
             f"일일 예산: ${daily_budget:,.2f} "
             f"(전략 70%: ${allocation.strategy_amount:,.2f}, "
             f"고정 30%: ${allocation.fixed_amount:,.2f})"
             + (f" [이월 ${carryover:,.2f} 포함]" if carryover > 0 else "")
         )
+        logger.info(budget_msg)
+        _write_trading_log(db, "INFO", budget_msg)
 
         # 8. 전일 종가 조회 (지정가 모드용)
         prev_close_prices = {}
@@ -528,6 +538,10 @@ async def execute_daily_trading(db: Session = None) -> dict:
 
     except Exception as e:
         logger.exception(f"매매 실행 중 오류: {e}")
+        try:
+            _write_trading_log(db, "ERROR", f"매매 실행 중 오류: {str(e)}")
+        except Exception:
+            pass
         return {
             "success": False,
             "message": f"매매 실행 중 오류: {str(e)}",
