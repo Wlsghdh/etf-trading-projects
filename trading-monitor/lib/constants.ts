@@ -11,6 +11,7 @@ export const API_ENDPOINTS = {
   CHART_DATA: '/trading/api/data',       // + /{symbol}?timeframe=D&limit=100
   FORECAST: '/trading/api/predictions/forecast', // + /{symbol}?days=30
   ORDER_LOGS: '/trading/api/trading/order-logs',
+  TRADING_LOGS: '/trading/api/trading/trading-logs',
   SCRAPER_LOGS: '/trading/api/scraper/logs',
   SCRAPER_STATUS: '/trading/api/scraper/status',
   DB_TABLES: '/trading/api/db/tables',   // + ?db_name=etf2_db

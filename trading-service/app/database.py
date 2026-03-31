@@ -26,7 +26,7 @@ def get_db():
 
 def init_db():
     """테이블 생성 + 마이그레이션"""
-    from app.models import TradingCycle, DailyPurchase, OrderLog  # noqa
+    from app.models import TradingCycle, DailyPurchase, OrderLog, TradingLog  # noqa
     Base.metadata.create_all(bind=engine)
 
     # 마이그레이션: order_logs에 limit_price 컬럼 추가

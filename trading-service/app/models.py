@@ -79,6 +79,21 @@ class OrderLog(Base):
         return f"<OrderLog {self.order_type} {self.etf_code} {self.status}>"
 
 
+class TradingLog(Base):
+    """트레이딩 서비스 로그 (웹 모니터링용)"""
+    __tablename__ = "trading_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    level = Column(String(10), nullable=False, default="INFO")  # DEBUG/INFO/WARNING/ERROR
+    message = Column(String(2000), nullable=False)
+    symbol = Column(String(20), nullable=True)
+    order_type = Column(String(20), nullable=True)  # BUY/SELL/BUY_FIXED
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<TradingLog [{self.level}] {self.message[:50]}>"
+
+
 class DailySnapshot(Base):
     """일일 포트폴리오 스냅샷 (날짜별 수익률 추적)"""
     __tablename__ = "daily_snapshots"

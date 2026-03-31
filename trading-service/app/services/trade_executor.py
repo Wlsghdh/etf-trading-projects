@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import OrderLog
+from app.models import OrderLog, TradingLog
 from app.services.kis_client import get_kis_client, OrderResult
 from app.services.ranking_client import get_ranking_client
 from app.services.capital_manager import get_capital_manager
@@ -19,6 +19,16 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRY = 3
 RETRY_DELAYS = [1, 3, 9]  # 지수 백오프
+
+
+def _write_trading_log(db: Session, level: str, message: str, symbol: str = None, order_type: str = None):
+    """트레이딩 로그를 DB에 기록 (웹 모니터링용)"""
+    try:
+        log = TradingLog(level=level, message=message, symbol=symbol, order_type=order_type)
+        db.add(log)
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 async def _retry_order(coro_factory, etf_code: str, order_type: str) -> OrderResult:
@@ -49,6 +59,7 @@ def _log_order(
     limit_price: float = None,
 ):
     """주문 로그 기록"""
+    status = "SUCCESS" if result.success else "FAILED"
     log = OrderLog(
         cycle_id=cycle_id,
         order_type=order_type,
@@ -57,12 +68,21 @@ def _log_order(
         price=result.price if result.success else None,
         limit_price=limit_price,
         order_id=result.order_id,
-        status="SUCCESS" if result.success else "FAILED",
+        status=status,
         error_message=None if result.success else result.message,
         retry_count=retry_count,
     )
     db.add(log)
     db.commit()
+
+    # 웹 모니터링용 로그
+    level = "INFO" if result.success else "ERROR"
+    price_str = f"${result.price:.2f}" if result.success and result.price else "N/A"
+    limit_str = f" (지정가 ${limit_price:.2f})" if limit_price else ""
+    msg = f"{order_type} {etf_code} x{quantity:.0f}주 @ {price_str}{limit_str} → {status}"
+    if not result.success:
+        msg += f" [{result.message}]"
+    _write_trading_log(db, level, msg, symbol=etf_code, order_type=order_type)
 
 
 def _get_previous_close_prices(symbols: list[str]) -> dict[str, float]:
@@ -368,6 +388,7 @@ async def execute_daily_trading(db: Session = None) -> dict:
 
         mode_str = "소수점" if capital_mgr.fractional_mode else "정수"
         logger.info(f"매매 모드: {mode_str}")
+        _write_trading_log(db, "INFO", f"=== 매매 실행 시작 ({mode_str}, {settings.order_type}) ===")
 
         # 2. 잔고 조회 및 사이클 관리
         balance = await kis.get_balance()
@@ -484,6 +505,7 @@ async def execute_daily_trading(db: Session = None) -> dict:
             f"[고정 {fixed_count}건 + 전략 {strategy_count}건]"
         )
         logger.info(f"=== 매매 완료: {summary} ===")
+        _write_trading_log(db, "INFO", f"매매 완료: {summary}")
 
         # 10. 일일 스냅샷 저장
         try:
