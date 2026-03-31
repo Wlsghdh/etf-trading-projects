@@ -11,6 +11,7 @@ const pageTitles: Record<string, string> = {
   '/pipeline': '파이프라인 모니터링',
   '/calendar': '달력',
   '/portfolio': '포트폴리오',
+  '/order-logs': 'KIS 주문 로그',
   '/db-viewer': 'DB 뷰어',
   '/settings': '설정',
   '/admin': '관리자',

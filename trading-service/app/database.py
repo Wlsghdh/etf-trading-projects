@@ -25,6 +25,16 @@ def get_db():
 
 
 def init_db():
-    """테이블 생성"""
+    """테이블 생성 + 마이그레이션"""
     from app.models import TradingCycle, DailyPurchase, OrderLog  # noqa
     Base.metadata.create_all(bind=engine)
+
+    # 마이그레이션: order_logs에 limit_price 컬럼 추가
+    from sqlalchemy import text, inspect
+    insp = inspect(engine)
+    if "order_logs" in insp.get_table_names():
+        cols = [c["name"] for c in insp.get_columns("order_logs")]
+        if "limit_price" not in cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE order_logs ADD COLUMN limit_price FLOAT"))
+                conn.commit()

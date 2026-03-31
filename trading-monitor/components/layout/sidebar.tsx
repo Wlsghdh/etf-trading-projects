@@ -15,6 +15,7 @@ import {
   AiBrain02Icon,
   Layers01Icon,
   Logout03Icon,
+  FileAttachmentIcon,
 } from '@hugeicons/core-free-icons';
 
 const navItems = [
@@ -24,6 +25,7 @@ const navItems = [
   { href: '/model', label: 'ML 모니터링', icon: AiBrain02Icon },
   { href: '/pipeline', label: '파이프라인', icon: WorkflowSquare10Icon },
   { href: '/portfolio', label: '포트폴리오', icon: ChartLineData02Icon },
+  { href: '/order-logs', label: 'KIS 주문 로그', icon: FileAttachmentIcon },
   { href: '/calendar', label: '달력', icon: Calendar03Icon },
   { href: '/db-viewer', label: 'DB 뷰어', icon: Database02Icon },
   { href: '/settings', label: '설정', icon: Settings02Icon },

@@ -1,8 +1,10 @@
 import asyncio
 import logging
+import os
 from datetime import date
 
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.config import settings
 from app.database import SessionLocal
@@ -44,6 +46,7 @@ def _log_order(
     quantity: float,
     result: OrderResult,
     retry_count: int = 0,
+    limit_price: float = None,
 ):
     """주문 로그 기록"""
     log = OrderLog(
@@ -52,6 +55,7 @@ def _log_order(
         etf_code=etf_code,
         quantity=quantity,
         price=result.price if result.success else None,
+        limit_price=limit_price,
         order_id=result.order_id,
         status="SUCCESS" if result.success else "FAILED",
         error_message=None if result.success else result.message,
@@ -59,6 +63,55 @@ def _log_order(
     )
     db.add(log)
     db.commit()
+
+
+def _get_previous_close_prices(symbols: list[str]) -> dict[str, float]:
+    """전일 종가 조회 (원격 MySQL DB에서)"""
+    prices = {}
+    try:
+        from sqlalchemy import create_engine
+        db_url = os.getenv("REMOTE_DB_URL", "mysql+pymysql://ahnbi2:bigdata@172.17.0.1:3306/etf2_db")
+        engine = create_engine(db_url)
+        with engine.connect() as conn:
+            for sym in symbols:
+                try:
+                    r = conn.execute(text(f"SELECT close FROM `{sym}_D` ORDER BY time DESC LIMIT 1"))
+                    row = r.fetchone()
+                    if row:
+                        prices[sym] = float(row[0])
+                except Exception:
+                    pass
+        engine.dispose()
+    except Exception as e:
+        logger.error(f"전일 종가 조회 실패: {e}")
+    return prices
+
+
+def _get_unfilled_carryover(db: Session, cycle_id: int, today: date) -> float:
+    """전일 미체결 주문의 이월 금액 계산 및 상태 업데이트"""
+    # 오늘 이전의 PENDING 상태 주문 조회 (지정가 미체결)
+    pending_orders = db.query(OrderLog).filter(
+        OrderLog.cycle_id == cycle_id,
+        OrderLog.status == "PENDING",
+        OrderLog.order_type.in_(["BUY", "BUY_FIXED"]),
+    ).all()
+
+    carryover = 0.0
+    for order in pending_orders:
+        # 미체결 → UNFILLED로 상태 변경
+        order.status = "UNFILLED"
+        price = order.limit_price or order.price or 0
+        carryover += price * order.quantity
+        logger.info(
+            f"미체결 이월: {order.etf_code} {order.quantity}주 "
+            f"@ ${price:.2f} = ${price * order.quantity:.2f}"
+        )
+
+    if pending_orders:
+        db.commit()
+        logger.info(f"총 미체결 이월 금액: ${carryover:,.2f} ({len(pending_orders)}건)")
+
+    return carryover
 
 
 async def _execute_fixed_etf_buying(
@@ -69,14 +122,16 @@ async def _execute_fixed_etf_buying(
     kis,
     capital_mgr,
     rankings: list = None,
+    prev_close_prices: dict = None,
 ) -> tuple[int, float, list[dict]]:
     """
-    30% 고정 ETF 매수 실행.
+    30% 고정 ETF 매수 실행 (지정가: 전일 종가).
     Returns: (bought_count, bought_total, purchase_items)
     """
     bought_count = 0
     bought_total = 0.0
     purchase_items = []
+    use_limit = settings.order_type == "limit"
 
     fixed_codes = settings.fixed_etf_codes
     if not fixed_codes:
@@ -84,23 +139,33 @@ async def _execute_fixed_etf_buying(
         return bought_count, bought_total, purchase_items
 
     n_fixed = len(fixed_codes)
+    order_mode = "지정가" if use_limit else "시장가"
     logger.info(
-        f"고정 ETF 매수: {fixed_codes}, 총 자금 ${fixed_amount:,.2f}, "
+        f"고정 ETF 매수 ({order_mode}): {fixed_codes}, 총 자금 ${fixed_amount:,.2f}, "
         f"ETF당 ${fixed_amount / n_fixed:,.2f}"
     )
 
     for code in fixed_codes:
-        # KIS 현재가 조회 시도, 실패 시 ML 랭킹에서 가격 가져오기
-        price = await kis.get_current_price(code)
+        # 가격 결정: 지정가면 전일 종가, 아니면 현재가
+        price = None
+        limit_price = None
+
+        if use_limit and prev_close_prices and code in prev_close_prices:
+            price = prev_close_prices[code]
+            limit_price = price
+            logger.info(f"고정 ETF {code} 지정가 설정: ${price:.2f} (전일 종가)")
+        else:
+            # 현재가 조회 (시장가 또는 전일 종가 없는 경우)
+            price = await kis.get_current_price(code)
+            if price is None or price <= 0:
+                for r in rankings:
+                    if r.symbol == code and r.current_close and r.current_close > 0:
+                        price = r.current_close
+                        logger.info(f"고정 ETF {code} 현재가를 ML 랭킹에서 가져옴: ${price:.2f}")
+                        break
+
         if price is None or price <= 0:
-            # ML 랭킹에서 현재가 찾기
-            for r in rankings:
-                if r.symbol == code and r.current_close and r.current_close > 0:
-                    price = r.current_close
-                    logger.info(f"고정 ETF {code} 현재가를 ML 랭킹에서 가져옴: ${price:.2f}")
-                    break
-        if price is None or price <= 0:
-            logger.warning(f"고정 ETF 현재가 조회 실패: {code}, 스킵")
+            logger.warning(f"고정 ETF 가격 조회 실패: {code}, 스킵")
             continue
 
         qty = capital_mgr.get_fixed_etf_quantity(fixed_amount, price, n_fixed)
@@ -108,27 +173,58 @@ async def _execute_fixed_etf_buying(
             logger.warning(f"고정 ETF 매수 수량 0: {code} (가격 ${price:.2f}, 예산 부족)")
             continue
 
+        # 지정가 주문: price 전달, 시장가 주문: None
+        order_price = limit_price if use_limit else None
         result = await _retry_order(
-            lambda c=code, q=qty: kis.buy_order(c, q),
+            lambda c=code, q=qty, p=order_price: kis.buy_order(c, q, p),
             code,
             "BUY_FIXED",
         )
-        _log_order(db, cycle_id, "BUY_FIXED", code, qty, result)
 
-        if result.success:
-            buy_price = result.price if result.price > 0 else price
+        if use_limit and result.success:
+            # 지정가 주문 접수됨 → PENDING (체결 여부는 다음 날 확인)
+            log = OrderLog(
+                cycle_id=cycle_id,
+                order_type="BUY_FIXED",
+                etf_code=code,
+                quantity=qty,
+                price=None,
+                limit_price=limit_price,
+                order_id=result.order_id,
+                status="PENDING",
+            )
+            db.add(log)
+            db.commit()
+
             purchase_items.append({
                 "etf_code": code,
                 "quantity": qty,
-                "price": buy_price,
+                "price": limit_price,
             })
             bought_count += 1
-            bought_total += buy_price * qty
+            bought_total += limit_price * qty
             logger.info(
-                f"고정 ETF 매수 성공: {code} x {qty:.0f}주 @ ${buy_price:.2f}"
+                f"고정 ETF 지정가 주문 접수: {code} x {qty:.0f}주 @ ${limit_price:.2f}"
             )
+        elif not use_limit:
+            _log_order(db, cycle_id, "BUY_FIXED", code, qty, result)
+            if result.success:
+                buy_price = result.price if result.price > 0 else price
+                purchase_items.append({
+                    "etf_code": code,
+                    "quantity": qty,
+                    "price": buy_price,
+                })
+                bought_count += 1
+                bought_total += buy_price * qty
+                logger.info(
+                    f"고정 ETF 시장가 매수 성공: {code} x {qty:.0f}주 @ ${buy_price:.2f}"
+                )
+            else:
+                logger.error(f"고정 ETF 매수 실패: {code} — {result.message}")
         else:
-            logger.error(f"고정 ETF 매수 실패: {code} — {result.message}")
+            _log_order(db, cycle_id, "BUY_FIXED", code, qty, result, limit_price=limit_price)
+            logger.error(f"고정 ETF 지정가 주문 실패: {code} — {result.message}")
 
     return bought_count, bought_total, purchase_items
 
@@ -141,9 +237,10 @@ async def _execute_strategy_buying(
     rankings: list,
     kis,
     capital_mgr,
+    prev_close_prices: dict = None,
 ) -> tuple[int, float, list[dict]]:
     """
-    70% ML 전략 매수 실행.
+    70% ML 전략 매수 실행 (지정가: 전일 종가).
 
     정수 모드: 예산 내에서 상위 종목부터 1주씩 매수 (예산 소진 시 중단)
     소수점 모드: 전체 종목에 균등 배분 (기존 방식)
@@ -153,13 +250,15 @@ async def _execute_strategy_buying(
     bought_count = 0
     bought_total = 0.0
     purchase_items = []
+    use_limit = settings.order_type == "limit"
 
     # 포트폴리오 구성 (예산에 맞게 종목 선정)
     portfolio = capital_mgr.build_strategy_portfolio(strategy_amount, rankings)
 
     mode_str = "소수점" if capital_mgr.fractional_mode else "정수"
+    order_mode = "지정가" if use_limit else "시장가"
     logger.info(
-        f"전략 매수 ({mode_str}): {portfolio.selected_count}개 종목 선정, "
+        f"전략 매수 ({mode_str}, {order_mode}): {portfolio.selected_count}개 종목 선정, "
         f"총 자금 ${strategy_amount:,.2f}, "
         f"예상 매수 ${portfolio.total_amount:,.2f}, "
         f"잔여 ${portfolio.remaining_budget:,.2f}"
@@ -170,24 +269,61 @@ async def _execute_strategy_buying(
         qty = item["quantity"]
         price = item["price"]
 
+        # 지정가: 전일 종가 사용
+        limit_price = None
+        order_price = None
+        if use_limit and prev_close_prices and symbol in prev_close_prices:
+            limit_price = prev_close_prices[symbol]
+            order_price = limit_price
+        elif use_limit:
+            # 전일 종가 없으면 ML 랭킹 가격 사용
+            limit_price = price
+            order_price = price
+
         result = await _retry_order(
-            lambda c=symbol, q=qty: kis.buy_order(c, q),
+            lambda c=symbol, q=qty, p=order_price: kis.buy_order(c, q, p),
             symbol,
             "BUY",
         )
-        _log_order(db, cycle_id, "BUY", symbol, qty, result)
 
-        if result.success:
-            buy_price = result.price if result.price > 0 else price
+        if use_limit and result.success:
+            # 지정가 주문 접수 → PENDING
+            log = OrderLog(
+                cycle_id=cycle_id,
+                order_type="BUY",
+                etf_code=symbol,
+                quantity=qty,
+                price=None,
+                limit_price=limit_price,
+                order_id=result.order_id,
+                status="PENDING",
+            )
+            db.add(log)
+            db.commit()
+
             purchase_items.append({
                 "etf_code": symbol,
                 "quantity": qty,
-                "price": buy_price,
+                "price": limit_price,
             })
             bought_count += 1
-            bought_total += buy_price * qty
+            bought_total += limit_price * qty
+        elif not use_limit:
+            _log_order(db, cycle_id, "BUY", symbol, qty, result)
+            if result.success:
+                buy_price = result.price if result.price > 0 else price
+                purchase_items.append({
+                    "etf_code": symbol,
+                    "quantity": qty,
+                    "price": buy_price,
+                })
+                bought_count += 1
+                bought_total += buy_price * qty
+            else:
+                logger.warning(f"전략 매수 실패: {symbol} — {result.message}")
         else:
-            logger.warning(f"전략 매수 실패: {symbol} — {result.message}")
+            _log_order(db, cycle_id, "BUY", symbol, qty, result, limit_price=limit_price)
+            logger.warning(f"전략 지정가 주문 실패: {symbol} — {result.message}")
 
     return bought_count, bought_total, purchase_items
 
@@ -295,25 +431,44 @@ async def execute_daily_trading(db: Session = None) -> dict:
 
             logger.info(f"매도 완료: {sold_count}건, 총 ${sold_total:,.2f}")
 
-        # 6. 일일 매수 예산 계산 (초기 자금 / 63)
+        # 6. 미체결 이월 처리 (지정가 모드)
+        carryover = 0.0
+        if settings.order_type == "limit":
+            carryover = _get_unfilled_carryover(db, cycle.id, today)
+            if carryover > 0:
+                logger.info(f"전일 미체결 이월 금액: ${carryover:,.2f}")
+
+        # 7. 일일 매수 예산 계산 (초기 자금 / 63 + 미체결 이월)
         daily_budget = capital_mgr.calculate_daily_budget(cycle.initial_capital)
+        daily_budget += carryover  # 미체결 이월분 추가
         allocation = capital_mgr.calculate_allocation(daily_budget)
         logger.info(
             f"일일 예산: ${daily_budget:,.2f} "
             f"(전략 70%: ${allocation.strategy_amount:,.2f}, "
             f"고정 30%: ${allocation.fixed_amount:,.2f})"
+            + (f" [이월 ${carryover:,.2f} 포함]" if carryover > 0 else "")
         )
 
-        # 7. 고정 ETF 매수 (30%)
+        # 8. 전일 종가 조회 (지정가 모드용)
+        prev_close_prices = {}
+        if settings.order_type == "limit":
+            all_symbols = [r.symbol for r in rankings[:settings.top_n_etfs]]
+            all_symbols.extend(settings.fixed_etf_codes)
+            prev_close_prices = _get_previous_close_prices(list(set(all_symbols)))
+            logger.info(f"전일 종가 조회: {len(prev_close_prices)}개 종목")
+
+        # 9. 고정 ETF 매수 (30%)
         fixed_count, fixed_total, fixed_items = await _execute_fixed_etf_buying(
-            db, cycle.id, day, allocation.fixed_amount, kis, capital_mgr, rankings
+            db, cycle.id, day, allocation.fixed_amount, kis, capital_mgr, rankings,
+            prev_close_prices=prev_close_prices,
         )
         bought_count += fixed_count
         bought_total += fixed_total
 
-        # 8. 전략 매수 (70%) — ML 랭킹 기반
+        # 10. 전략 매수 (70%) — ML 랭킹 기반
         strategy_count, strategy_total, strategy_items = await _execute_strategy_buying(
-            db, cycle.id, day, allocation.strategy_amount, rankings, kis, capital_mgr
+            db, cycle.id, day, allocation.strategy_amount, rankings, kis, capital_mgr,
+            prev_close_prices=prev_close_prices,
         )
         bought_count += strategy_count
         bought_total += strategy_total

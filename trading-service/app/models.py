@@ -62,12 +62,13 @@ class OrderLog(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     cycle_id = Column(Integer, ForeignKey("trading_cycles.id"), nullable=True)
-    order_type = Column(String(10), nullable=False)  # BUY / SELL
+    order_type = Column(String(10), nullable=False)  # BUY / SELL / BUY_FIXED
     etf_code = Column(String(20), nullable=False)
     quantity = Column(Float, nullable=False)  # 소수점 매매 지원
-    price = Column(Float, nullable=True)
+    price = Column(Float, nullable=True)  # 체결 가격
+    limit_price = Column(Float, nullable=True)  # 지정가 (전일 종가)
     order_id = Column(String(50), nullable=True)  # KIS 주문번호
-    status = Column(String(20), nullable=False, default="PENDING")  # SUCCESS / FAILED / PENDING
+    status = Column(String(20), nullable=False, default="PENDING")  # SUCCESS / FAILED / PENDING / UNFILLED / CANCELLED
     error_message = Column(String(500), nullable=True)
     retry_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)

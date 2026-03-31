@@ -259,11 +259,11 @@ class KISClient:
         url = f"{self._base_url}/uapi/overseas-stock/v1/trading/order"
         exchange_code = get_exchange_code(code)
 
-        # 시장가 주문: OVRS_ORD_UNPR="0"
-        if price is None or settings.order_type == "market":
-            ord_unpr = "0"
+        # 시장가 주문: OVRS_ORD_UNPR="0", 지정가: 가격 지정
+        if price is None:
+            ord_unpr = "0"  # 시장가
         else:
-            ord_unpr = str(round(price, 2))
+            ord_unpr = str(round(price, 2))  # 지정가
 
         body = {
             "CANO": account_parts[0],
