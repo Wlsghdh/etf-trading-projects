@@ -441,10 +441,10 @@ class TradingViewScraper:
         timeframe_map = {
             "12달": "D",
             "12개월": "D",
-            "1달": "D",
-            "1개월": "D",
-            "1주": "D",
-            "1일": "1h",
+            "1달": "30m",
+            "1개월": "30m",
+            "1주": "5m",
+            "1일": "1m",
         }
         return timeframe_map.get(period_name, "D")
 
