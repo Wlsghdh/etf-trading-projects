@@ -1,6 +1,7 @@
 "use client"
 
-import { ArrowDown, ArrowUp, TrendingUp, TrendingDown } from "lucide-react"
+import { useEffect, useState } from "react"
+import { ArrowDown, ArrowUp, TrendingUp, TrendingDown, AlertCircle } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Table,
@@ -11,7 +12,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { returns, portfolio, summary } from "@/lib/data"
+import { Skeleton } from "@/components/ui/skeleton"
+import { fetchPortfolio, fetchSnapshots, type Portfolio, type SnapshotData } from "@/lib/trading-api"
+import { returns as dummyReturns, portfolio as dummyPortfolio, summary as dummySummary, type ReturnData } from "@/lib/data"
 import {
   ChartConfig,
   ChartContainer,
@@ -34,45 +37,95 @@ const chartConfig = {
     color: "var(--chart-3)",
   },
   benchmark: {
-    label: "KOSPI 200",
+    label: "QQQ (벤치마크)",
     color: "var(--muted-foreground)",
   },
 } satisfies ChartConfig
 
 export default function ReturnsPage() {
+  const [returnsData, setReturnsData] = useState<ReturnData[]>([])
+  const [loading, setLoading] = useState(true)
+  const [usingRealData, setUsingRealData] = useState(false)
+
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true)
+      try {
+        const snapshots = await fetchSnapshots(30)
+        if (snapshots.length > 1) {
+          const sorted = [...snapshots].sort((a, b) => a.date.localeCompare(b.date))
+
+          // 스냅샷 → ReturnData 변환
+          let cumReturn = 0
+          const converted: ReturnData[] = sorted.map((s, i) => {
+            const prevValue = i > 0 ? sorted[i - 1].total_invested : s.total_invested
+            const dailyReturn = prevValue > 0 ? ((s.total_invested - prevValue) / prevValue) * 100 : 0
+            cumReturn += dailyReturn
+            return {
+              date: s.date,
+              portfolioValue: s.total_invested,
+              dailyReturn: parseFloat(dailyReturn.toFixed(2)),
+              cumulativeReturn: parseFloat(cumReturn.toFixed(2)),
+              benchmarkReturn: 0,
+              benchmarkCumulativeReturn: 0,
+            }
+          })
+
+          setReturnsData(converted)
+          setUsingRealData(true)
+        }
+      } catch {
+        // 실패 시 더미 폴백
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadData()
+  }, [])
+
+  // 폴백
+  const returns = returnsData.length > 1 ? returnsData : dummyReturns
+
   const latestReturn = returns[returns.length - 1]
-  const previousReturn = returns[returns.length - 2]
-
-  const monthlyReturns = returns
-
+  const previousReturn = returns[returns.length - 2] || returns[returns.length - 1]
   const avgDailyReturn = returns.reduce((sum, r) => sum + r.dailyReturn, 0) / returns.length
   const maxDailyReturn = Math.max(...returns.map(r => r.dailyReturn))
   const minDailyReturn = Math.min(...returns.map(r => r.dailyReturn))
-
   const positiveDays = returns.filter(r => r.dailyReturn > 0).length
   const negativeDays = returns.filter(r => r.dailyReturn <= 0).length
-  const winRate = (positiveDays / returns.length) * 100
+  const winRate = returns.length > 0 ? (positiveDays / returns.length) * 100 : 0
 
-  // 종목별 수익률 계산
-  const totalAbsProfit = portfolio.reduce((sum, item) => sum + Math.abs(item.profit), 0)
-  const stockReturns = portfolio.map(item => ({
-    symbol: item.symbol,
-    name: item.name,
-    profit: item.profit,
-    profitPercent: item.profitPercent,
-    contribution: (item.profit / summary.totalProfit) * 100,
-    // 바 표시용 정규화된 값 (0-100 범위)
-    barWidth: (Math.abs(item.profit) / totalAbsProfit) * 100,
-  })).sort((a, b) => b.profitPercent - a.profitPercent)
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <div className="grid gap-4 md:grid-cols-4">
+          {[1,2,3,4].map(i => <Skeleton key={i} className="h-24" />)}
+        </div>
+        <Skeleton className="h-[400px]" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">수익률 분석</h2>
         <p className="text-muted-foreground">
-          포트폴리오 성과 및 수익률 추이
+          {usingRealData ? "실시간 포트폴리오 성과 (Trading Service 연동)" : "포트폴리오 성과 및 수익률 추이 (데모 데이터)"}
         </p>
       </div>
+
+      {!usingRealData && (
+        <Card className="border-yellow-500/30 bg-yellow-500/5">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-2 text-yellow-500">
+              <AlertCircle className="h-4 w-4" />
+              <span className="text-sm">Trading 서비스 연결 불가 - 데모 데이터 표시 중. 매매 시작 후 실데이터가 표시됩니다.</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 요약 카드 */}
       <div className="grid gap-4 md:grid-cols-4">
@@ -84,9 +137,7 @@ export default function ReturnsPage() {
             <div className={`text-2xl font-bold ${latestReturn.cumulativeReturn >= 0 ? "text-profit-positive" : "text-profit-negative"}`}>
               {latestReturn.cumulativeReturn >= 0 ? "+" : ""}{latestReturn.cumulativeReturn.toFixed(2)}%
             </div>
-            <p className="text-xs text-muted-foreground">
-              30일 기준
-            </p>
+            <p className="text-xs text-muted-foreground">{returns.length}일 기준</p>
           </CardContent>
         </Card>
 
@@ -118,15 +169,11 @@ export default function ReturnsPage() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">오늘의 수익률</CardTitle>
+            <CardTitle className="text-sm font-medium">최근 수익률</CardTitle>
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold flex items-center gap-1 ${latestReturn.dailyReturn >= 0 ? "text-profit-positive" : "text-profit-negative"}`}>
-              {latestReturn.dailyReturn >= 0 ? (
-                <TrendingUp className="h-5 w-5" />
-              ) : (
-                <TrendingDown className="h-5 w-5" />
-              )}
+              {latestReturn.dailyReturn >= 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
               {latestReturn.dailyReturn >= 0 ? "+" : ""}{latestReturn.dailyReturn.toFixed(2)}%
             </div>
             <p className="text-xs text-muted-foreground">
@@ -148,11 +195,11 @@ export default function ReturnsPage() {
           <Card>
             <CardHeader>
               <CardTitle>포트폴리오 가치 추이</CardTitle>
-              <CardDescription>최근 30일 포트폴리오 가치 변동</CardDescription>
+              <CardDescription>최근 {returns.length}일 포트폴리오 가치 변동</CardDescription>
             </CardHeader>
             <CardContent>
               <ChartContainer config={chartConfig} className="h-[350px] w-full">
-                <AreaChart data={monthlyReturns}>
+                <AreaChart data={returns}>
                   <defs>
                     <linearGradient id="fillPortfolio" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="var(--color-portfolioValue)" stopOpacity={0.8} />
@@ -160,24 +207,10 @@ export default function ReturnsPage() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={(value) => value.slice(5)}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
-                    tickLine={false}
-                    axisLine={false}
-                  />
+                  <XAxis dataKey="date" tickFormatter={(v) => v.slice(5)} tickLine={false} axisLine={false} />
+                  <YAxis tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} tickLine={false} axisLine={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Area
-                    type="monotone"
-                    dataKey="portfolioValue"
-                    stroke="var(--color-portfolioValue)"
-                    fill="url(#fillPortfolio)"
-                  />
+                  <Area type="monotone" dataKey="portfolioValue" stroke="var(--color-portfolioValue)" fill="url(#fillPortfolio)" />
                 </AreaChart>
               </ChartContainer>
             </CardContent>
@@ -188,30 +221,17 @@ export default function ReturnsPage() {
           <Card>
             <CardHeader>
               <CardTitle>일일 수익률</CardTitle>
-              <CardDescription>최근 30일 일일 수익률 분포</CardDescription>
+              <CardDescription>최근 {returns.length}일 일일 수익률 분포</CardDescription>
             </CardHeader>
             <CardContent>
               <ChartContainer config={chartConfig} className="h-[350px] w-full">
-                <BarChart data={monthlyReturns}>
+                <BarChart data={returns}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={(value) => value.slice(8)}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    tickFormatter={(value) => `${value}%`}
-                    tickLine={false}
-                    axisLine={false}
-                  />
+                  <XAxis dataKey="date" tickFormatter={(v) => v.slice(8)} tickLine={false} axisLine={false} />
+                  <YAxis tickFormatter={(v) => `${v}%`} tickLine={false} axisLine={false} />
                   <ReferenceLine y={0} stroke="#666" />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar
-                    dataKey="dailyReturn"
-                    fill="var(--color-dailyReturn)"
-                    radius={[4, 4, 0, 0]}
-                  />
+                  <Bar dataKey="dailyReturn" fill="var(--color-dailyReturn)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ChartContainer>
             </CardContent>
@@ -221,110 +241,24 @@ export default function ReturnsPage() {
         <TabsContent value="cumulative">
           <Card>
             <CardHeader>
-              <CardTitle>누적 수익률 비교</CardTitle>
-              <CardDescription>포트폴리오 vs 시장 벤치마크 (KOSPI 200)</CardDescription>
+              <CardTitle>누적 수익률</CardTitle>
+              <CardDescription>포트폴리오 누적 수익률 추이</CardDescription>
             </CardHeader>
             <CardContent>
               <ChartContainer config={chartConfig} className="h-[350px] w-full">
-                <LineChart data={monthlyReturns}>
+                <LineChart data={returns}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={(value) => value.slice(5)}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    tickFormatter={(value) => `${value}%`}
-                    tickLine={false}
-                    axisLine={false}
-                  />
+                  <XAxis dataKey="date" tickFormatter={(v) => v.slice(5)} tickLine={false} axisLine={false} />
+                  <YAxis tickFormatter={(v) => `${v}%`} tickLine={false} axisLine={false} />
                   <ReferenceLine y={0} stroke="#666" />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Line
-                    type="monotone"
-                    dataKey="cumulativeReturn"
-                    stroke="var(--color-cumulativeReturn)"
-                    name="포트폴리오"
-                    strokeWidth={3}
-                    dot={{ fill: "var(--color-cumulativeReturn)", r: 3 }}
-                    activeDot={{ r: 5 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="benchmarkCumulativeReturn"
-                    stroke="var(--color-benchmark)"
-                    name="KOSPI 200"
-                    strokeWidth={2}
-                    strokeDasharray="5 5"
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                  />
+                  <Line type="monotone" dataKey="cumulativeReturn" stroke="var(--color-cumulativeReturn)" name="포트폴리오" strokeWidth={3} dot={{ fill: "var(--color-cumulativeReturn)", r: 3 }} activeDot={{ r: 5 }} />
                 </LineChart>
               </ChartContainer>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
-
-      {/* 종목별 수익 기여도 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>종목별 수익 기여도</CardTitle>
-          <CardDescription>포트폴리오 수익에 대한 각 종목의 기여도</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>종목</TableHead>
-                <TableHead className="text-right">수익률</TableHead>
-                <TableHead className="text-right">수익금</TableHead>
-                <TableHead className="text-right">기여도</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {stockReturns.map((item) => (
-                <TableRow key={item.symbol}>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{item.symbol}</div>
-                      <div className="text-xs text-muted-foreground">{item.name}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className={`flex items-center justify-end gap-1 ${item.profitPercent >= 0 ? "text-profit-positive" : "text-profit-negative"
-                      }`}>
-                      {item.profitPercent >= 0 ? (
-                        <ArrowUp className="h-3 w-3" />
-                      ) : (
-                        <ArrowDown className="h-3 w-3" />
-                      )}
-                      {item.profitPercent >= 0 ? "+" : ""}{item.profitPercent.toFixed(2)}%
-                    </div>
-                  </TableCell>
-                  <TableCell className={`text-right ${item.profit >= 0 ? "text-profit-positive" : "text-profit-negative"}`}>
-                    {item.profit >= 0 ? "+" : ""}${item.profit.toLocaleString()}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${item.profit >= 0 ? "bg-profit-positive" : "bg-profit-negative"}`}
-                          style={{ width: `${Math.max(item.barWidth, 5)}%` }}
-                        />
-                      </div>
-                      <span className="text-sm w-14 text-right">
-                        {item.contribution >= 0 ? "+" : ""}{item.contribution.toFixed(1)}%
-                      </span>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
     </div>
   )
 }

@@ -134,6 +134,26 @@ export async function fetchOrderLog(page = 1, pageSize = 50): Promise<OrderLogRe
   return response.json()
 }
 
+export interface SnapshotData {
+  date: string
+  total_invested: number
+  total_current_value: number
+  total_pnl: number
+  total_pnl_percent: number
+  available_cash: number
+  holdings_count: number
+  day_buy_count: number
+  day_sell_count: number
+}
+
+export async function fetchSnapshots(limit = 30): Promise<SnapshotData[]> {
+  const response = await fetch(`${TRADING_API_BASE}/api/trading/snapshots?limit=${limit}`, {
+    cache: "no-store",
+  })
+  if (!response.ok) throw new Error(`Trading API error: ${response.status}`)
+  return response.json()
+}
+
 export async function checkTradingHealth(): Promise<TradingHealth> {
   try {
     const response = await fetch(`${TRADING_API_BASE}/health`, {
