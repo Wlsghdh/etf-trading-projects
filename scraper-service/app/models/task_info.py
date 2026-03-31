@@ -237,7 +237,7 @@ class TaskInfoManager:
 
     async def _recalculate_symbol_status(self, symbol: str) -> None:
         """Recalculate symbol status based on timeframe statuses."""
-        job_info = await self.get_job_info()
+        job_info = await self.get_job_info(reload=False)
         symbol_info = job_info.symbols.get(symbol)
 
         if not symbol_info:
