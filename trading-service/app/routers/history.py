@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import DailyPurchase, OrderLog, TradingCycle
+from app.models import DailyPurchase, OrderLog, TradingCycle, TradingLog
 from app.schemas import (
     HistoryResponse,
     OrderLogResponse,
@@ -80,3 +80,37 @@ def get_orders(
         page_size=page_size,
         orders=[OrderLogItem.model_validate(o) for o in orders],
     )
+
+
+@router.get("/logs")
+def get_trading_logs(
+    limit: int = Query(200, ge=1, le=1000),
+    level: str = Query(None),
+    symbol: str = Query(None),
+    db: Session = Depends(get_db),
+):
+    """트레이딩 서비스 로그 조회 (실시간 모니터링용)"""
+    query = db.query(TradingLog)
+    if level and level != "ALL":
+        query = query.filter(TradingLog.level == level.upper())
+    if symbol:
+        query = query.filter(TradingLog.symbol == symbol.upper())
+
+    total = query.count()
+    logs = query.order_by(TradingLog.created_at.desc()).limit(limit).all()
+
+    return {
+        "logs": [
+            {
+                "id": log.id,
+                "level": log.level,
+                "message": log.message,
+                "symbol": log.symbol,
+                "order_type": log.order_type,
+                "timestamp": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log in logs
+        ],
+        "count": total,
+        "limit": limit,
+    }

@@ -41,6 +41,22 @@ export interface Order {
   reason?: string;
 }
 
+// KIS 주문 상세 로그
+export interface KISOrderLog {
+  id: number;
+  cycleId: number | null;
+  orderType: string;  // BUY / SELL / BUY_FIXED
+  etfCode: string;
+  quantity: number;
+  price: number | null;       // 체결 가격
+  limitPrice: number | null;  // 지정가 (전일 종가)
+  orderId: string | null;     // KIS 주문번호
+  status: string;             // SUCCESS / FAILED / PENDING / UNFILLED / CANCELLED
+  errorMessage: string | null;
+  retryCount: number;
+  createdAt: string;
+}
+
 // 매매 내역 (히스토리)
 export interface TradeHistory {
   id: string;

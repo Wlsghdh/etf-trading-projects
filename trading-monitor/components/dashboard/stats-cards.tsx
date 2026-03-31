@@ -31,6 +31,8 @@ export function StatsCards({ status }: StatsCardsProps) {
   const [portfolio, setPortfolio] = useState<PortfolioResponse | null>(null);
   const [resetLoading, setResetLoading] = useState(false);
   const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [calcInput, setCalcInput] = useState('');
+  const [calcMode, setCalcMode] = useState<'usd_to_krw' | 'krw_to_usd'>('usd_to_krw');
 
   const fetchData = useCallback(async () => {
     try {
@@ -117,6 +119,11 @@ export function StatsCards({ status }: StatsCardsProps) {
             <p className={`text-xs ${isPnlPositive ? 'text-green-400' : 'text-red-400'}`}>
               {isPnlPositive ? '+' : ''}{formatUSD(pnl)}
             </p>
+            {exchangeRate > 0 && (
+              <p className={`text-xs ${isPnlPositive ? 'text-green-400/70' : 'text-red-400/70'}`}>
+                ≈ {isPnlPositive ? '+' : ''}{formatKRW(pnl * exchangeRate)}
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -139,31 +146,53 @@ export function StatsCards({ status }: StatsCardsProps) {
           </CardContent>
         </Card>
 
-        {/* 환율 + 관리 */}
+        {/* 환율 계산기 */}
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">환율 / 관리</CardTitle>
-            <span className={`h-2 w-2 rounded-full ${kisConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+            <CardTitle className="text-sm font-medium text-muted-foreground">환율 계산기</CardTitle>
+            <div className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${kisConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+              <span className="text-xs text-muted-foreground">
+                {exchangeRate > 0 ? `₩${exchangeRate.toLocaleString()}/USD` : '-'}
+              </span>
+            </div>
           </CardHeader>
           <CardContent className="space-y-2">
-            <div className="flex items-baseline gap-1">
-              <span className="text-lg font-semibold tabular-nums">
-                {exchangeRate > 0 ? `₩${exchangeRate.toLocaleString()}` : '-'}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => { setCalcMode(m => m === 'usd_to_krw' ? 'krw_to_usd' : 'usd_to_krw'); setCalcInput(''); }}
+                className="shrink-0 rounded px-1.5 py-0.5 text-xs font-mono bg-zinc-800 hover:bg-zinc-700 transition-colors"
+              >
+                {calcMode === 'usd_to_krw' ? 'USD→KRW' : 'KRW→USD'}
+              </button>
+              <input
+                type="number"
+                value={calcInput}
+                onChange={e => setCalcInput(e.target.value)}
+                placeholder={calcMode === 'usd_to_krw' ? 'USD' : 'KRW'}
+                className="w-full rounded bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs font-mono tabular-nums text-right focus:outline-none focus:border-zinc-500"
+              />
+            </div>
+            <div className="text-right text-sm font-semibold tabular-nums">
+              {calcInput && exchangeRate > 0
+                ? calcMode === 'usd_to_krw'
+                  ? formatKRW(parseFloat(calcInput) * exchangeRate)
+                  : formatUSD(parseFloat(calcInput) / exchangeRate)
+                : <span className="text-muted-foreground text-xs">금액을 입력하세요</span>
+              }
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">
+                KIS {kisConnected ? '연결' : '미연결'} · {status.mode === 'paper' ? '모의' : '실투자'}
               </span>
-              <span className="text-xs text-muted-foreground">/USD</span>
+              <button
+                onClick={handleReset}
+                disabled={resetLoading}
+                className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors disabled:opacity-50"
+              >
+                {resetLoading ? '...' : '리셋'}
+              </button>
             </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>KIS {kisConnected ? '연결됨' : '미연결'}</span>
-              <span>·</span>
-              <span>{status.mode === 'paper' ? '모의' : '실투자'}</span>
-            </div>
-            <button
-              onClick={handleReset}
-              disabled={resetLoading}
-              className="w-full mt-1 rounded-md border border-zinc-700 px-2 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors disabled:opacity-50"
-            >
-              {resetLoading ? '리셋 중...' : '사이클 리셋'}
-            </button>
           </CardContent>
         </Card>
       </div>

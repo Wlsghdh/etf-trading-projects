@@ -56,6 +56,7 @@ class OrderLogItem(BaseModel):
     etf_code: str
     quantity: float
     price: Optional[float] = None
+    limit_price: Optional[float] = None
     order_id: Optional[str] = None
     status: str
     error_message: Optional[str] = None

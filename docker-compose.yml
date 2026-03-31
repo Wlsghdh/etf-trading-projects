@@ -12,7 +12,7 @@ services:
       - LOCAL_DB_PATH=/app/data/predictions.db
       - LOG_LEVEL=INFO
       - SUBMISSIONS_DIR=/app/submissions/tabpfn_v2
-      - DEFAULT_MODEL=simple
+      - DEFAULT_MODEL=ahnlab_lgbm
       - MODELS_DIR=/app/data/models
       - ENABLE_ML_FEATURES=false
     volumes:
