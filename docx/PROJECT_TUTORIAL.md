@@ -561,7 +561,7 @@ scheduler.add_job(
 
 ### 차이점
 
-```
+```ㄴㄴ
 Cron:
   - 서버 OS가 관리 (Docker 밖)
   - 컨테이너가 죽어도 설정은 남아있음
