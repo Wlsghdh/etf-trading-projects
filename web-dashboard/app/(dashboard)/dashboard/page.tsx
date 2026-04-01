@@ -7,9 +7,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { fetchPredictions, checkHealth, fetchLatestFactsheet, type Prediction, type MonthlyFactsheet } from "@/lib/api"
+import { fetchPortfolio, fetchSnapshots, type Portfolio, type SnapshotData } from "@/lib/trading-api"
 import { SNOWBALLING_ETF } from "@/lib/types/snowballing-etf"
 import { Button } from "@/components/ui/button"
-import { portfolio, returns } from "@/lib/data"
 import {
   ChartConfig,
   ChartContainer,
@@ -25,11 +25,24 @@ const chartConfig = {
   },
 } satisfies ChartConfig
 
+interface HoldingDisplay {
+  symbol: string
+  name: string
+  totalValue: number
+  profit: number
+  profitPercent: number
+}
+
 export default function DashboardPage() {
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [loading, setLoading] = useState(true)
   const [apiStatus, setApiStatus] = useState<"ok" | "error" | "loading">("loading")
   const [latestFactsheet, setLatestFactsheet] = useState<MonthlyFactsheet | null>(null)
+  const [holdings, setHoldings] = useState<HoldingDisplay[]>([])
+  const [totalInvested, setTotalInvested] = useState(0)
+  const [holdingsCount, setHoldingsCount] = useState(0)
+  const [chartData, setChartData] = useState<{ date: string; portfolioValue: number }[]>([])
+  const [usingRealData, setUsingRealData] = useState(false)
 
   useEffect(() => {
     async function loadData() {
@@ -42,12 +55,52 @@ export default function DashboardPage() {
         setPredictions(predictionsData)
         setApiStatus(health.status === "unhealthy" ? "error" : "ok")
 
-        // 최신 팩트시트 로드 (별도 try-catch로 실패해도 다른 데이터는 표시)
         try {
           const factsheet = await fetchLatestFactsheet()
           setLatestFactsheet(factsheet)
+        } catch { /* 팩트시트 없을 수 있음 */ }
+
+        // 실데이터 로드 시도
+        try {
+          const [portfolioData, snapshots] = await Promise.all([
+            fetchPortfolio(),
+            fetchSnapshots(7),
+          ])
+
+          if (portfolioData.holdings.length > 0) {
+            // 종목별 그룹핑 (같은 종목 여러 번 매수 가능)
+            const grouped: Record<string, { totalAmount: number; quantity: number }> = {}
+            for (const h of portfolioData.holdings) {
+              if (!grouped[h.etf_code]) grouped[h.etf_code] = { totalAmount: 0, quantity: 0 }
+              grouped[h.etf_code].totalAmount += h.total_amount
+              grouped[h.etf_code].quantity += h.quantity
+            }
+            const displayHoldings: HoldingDisplay[] = Object.entries(grouped)
+              .map(([symbol, data]) => ({
+                symbol,
+                name: symbol,
+                totalValue: data.totalAmount,
+                profit: 0,
+                profitPercent: 0,
+              }))
+              .sort((a, b) => b.totalValue - a.totalValue)
+              .slice(0, 5)
+
+            setHoldings(displayHoldings)
+            setTotalInvested(portfolioData.total_invested)
+            setHoldingsCount(portfolioData.total_count)
+            setUsingRealData(true)
+          }
+
+          if (snapshots.length > 0) {
+            const sorted = [...snapshots].sort((a, b) => a.date.localeCompare(b.date))
+            setChartData(sorted.map(s => ({
+              date: s.date,
+              portfolioValue: s.total_invested,
+            })))
+          }
         } catch {
-          // 팩트시트 로드 실패 시 무시 (아직 생성되지 않았을 수 있음)
+          // 실데이터 실패 → 더미 폴백
         }
       } catch {
         setApiStatus("error")
@@ -58,14 +111,14 @@ export default function DashboardPage() {
     loadData()
   }, [])
 
-  const recentReturns = returns.slice(-7)
-  const topPredictions = predictions.slice(0, 5)
-  const topHoldings = portfolio.slice(0, 5)
+  const displayHoldings = holdings
+  const displayChart = chartData
+  const displayTotalValue = totalInvested
+  const displayTotalProfit = 0
+  const displayCount = holdingsCount
 
+  const topPredictions = predictions.slice(0, 5)
   const summary = {
-    totalValue: portfolio.reduce((sum, item) => sum + item.totalValue, 0),
-    totalProfit: portfolio.reduce((sum, item) => sum + item.profit, 0),
-    profitPercent: 5.23,
     buySignals: predictions.filter((p) => p.signal === "BUY").length,
     sellSignals: predictions.filter((p) => p.signal === "SELL").length,
     holdSignals: predictions.filter((p) => p.signal === "HOLD").length,
@@ -73,13 +126,23 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* API 상태 알림 */}
       {apiStatus === "error" && (
         <Card className="border-warning-border bg-warning-bg">
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2 text-warning-text">
               <AlertCircle className="h-4 w-4" />
               <span className="text-sm">원격 DB 연결 오류 - 로컬 데이터로 표시 중</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {!usingRealData && !loading && (
+        <Card className="border-yellow-500/30 bg-yellow-500/5">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-2 text-yellow-500">
+              <AlertCircle className="h-4 w-4" />
+              <span className="text-sm">Trading 서비스 연결 불가 - 매매 시작 후 데이터가 표시됩니다</span>
             </div>
           </CardContent>
         </Card>
@@ -94,14 +157,11 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-brand-primary">
-              ${summary.totalValue.toLocaleString()}
+              ${displayTotalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            <p className="text-xs text-muted-foreground">
-              <span className={summary.profitPercent >= 0 ? "text-profit-positive" : "text-profit-negative"}>
-                {summary.profitPercent >= 0 ? "+" : ""}{summary.profitPercent}%
-              </span>{" "}
-              전일 대비
-            </p>
+            {!usingRealData && (
+              <p className="text-xs text-muted-foreground">데모 데이터</p>
+            )}
           </CardContent>
         </Card>
 
@@ -111,12 +171,10 @@ export default function DashboardPage() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${summary.totalProfit >= 0 ? "text-profit-positive" : "text-profit-negative"}`}>
-              {summary.totalProfit >= 0 ? "+" : ""}${summary.totalProfit.toLocaleString()}
+            <div className={`text-2xl font-bold ${displayTotalProfit >= 0 ? "text-profit-positive" : "text-profit-negative"}`}>
+              {displayTotalProfit >= 0 ? "+" : ""}${displayTotalProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            <p className="text-xs text-muted-foreground">
-              전체 보유 종목 기준
-            </p>
+            <p className="text-xs text-muted-foreground">전체 보유 종목 기준</p>
           </CardContent>
         </Card>
 
@@ -126,9 +184,9 @@ export default function DashboardPage() {
             <Briefcase className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{portfolio.length}</div>
+            <div className="text-2xl font-bold">{displayCount}</div>
             <p className="text-xs text-muted-foreground">
-              {portfolio.filter(p => p.profit > 0).length}개 수익, {portfolio.filter(p => p.profit <= 0).length}개 손실
+              {usingRealData ? "실시간 보유 현황" : "데모 데이터"}
             </p>
           </CardContent>
         </Card>
@@ -200,11 +258,13 @@ export default function DashboardPage() {
         <Card className="col-span-4">
           <CardHeader>
             <CardTitle>포트폴리오 추이</CardTitle>
-            <CardDescription>최근 7일 포트폴리오 가치 변동</CardDescription>
+            <CardDescription>
+              {usingRealData ? "일일 스냅샷 기반 투자금 추이" : "최근 7일 포트폴리오 가치 변동 (데모)"}
+            </CardDescription>
           </CardHeader>
           <CardContent className="pl-2">
             <ChartContainer config={chartConfig} className="h-[250px] w-full">
-              <AreaChart data={recentReturns}>
+              <AreaChart data={displayChart}>
                 <defs>
                   <linearGradient id="fillValue" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--color-portfolioValue)" stopOpacity={0.8} />
@@ -288,21 +348,25 @@ export default function DashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle>보유 종목 현황</CardTitle>
-          <CardDescription>현재 포트폴리오 상위 종목 (더미 데이터)</CardDescription>
+          <CardDescription>
+            {usingRealData ? "실시간 보유 종목 (Trading Service 연동)" : "현재 포트폴리오 상위 종목 (데모 데이터)"}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {topHoldings.map((item) => (
+            {displayHoldings.map((item) => (
               <div key={item.symbol} className="flex items-center justify-between border-b pb-3 last:border-0">
                 <div>
                   <div className="font-semibold">{item.symbol}</div>
                   <div className="text-sm text-muted-foreground">{item.name}</div>
                 </div>
                 <div className="text-right">
-                  <div className="font-medium">${item.totalValue.toLocaleString()}</div>
-                  <div className={`text-sm ${item.profit >= 0 ? "text-profit-positive" : "text-profit-negative"}`}>
-                    {item.profit >= 0 ? "+" : ""}{item.profitPercent.toFixed(2)}% ({item.profit >= 0 ? "+" : ""}${item.profit.toLocaleString()})
-                  </div>
+                  <div className="font-medium">${item.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  {item.profit !== 0 && (
+                    <div className={`text-sm ${item.profit >= 0 ? "text-profit-positive" : "text-profit-negative"}`}>
+                      {item.profit >= 0 ? "+" : ""}{item.profitPercent.toFixed(2)}% ({item.profit >= 0 ? "+" : ""}${item.profit.toLocaleString()})
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

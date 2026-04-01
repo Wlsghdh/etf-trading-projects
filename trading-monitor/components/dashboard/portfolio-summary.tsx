@@ -14,10 +14,24 @@ function formatUSD(v: number) {
   return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function formatKRW(v: number) {
+  if (v >= 100_000_000) return `${(v / 100_000_000).toFixed(1)}억원`;
+  if (v >= 10_000) return `${Math.round(v / 10_000).toLocaleString()}만원`;
+  return `${v.toLocaleString()}원`;
+}
+
 export function PortfolioSummary({ portfolio }: PortfolioSummaryProps) {
   const [showAll, setShowAll] = useState(false);
+  const [exchangeRate, setExchangeRate] = useState(0);
   const isPositive = portfolio.totalProfitLoss >= 0;
   const hasHoldings = portfolio.holdings.length > 0;
+
+  useEffect(() => {
+    fetch(API_ENDPOINTS.BALANCE)
+      .then(r => r.json())
+      .then(d => setExchangeRate(d.exchange_rate || 0))
+      .catch(() => {});
+  }, []);
 
   return (
     <>
@@ -42,17 +56,34 @@ export function PortfolioSummary({ portfolio }: PortfolioSummaryProps) {
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">총 투자금</span>
-            <span className="text-sm font-medium tabular-nums">{formatUSD(portfolio.totalInvestment)}</span>
+            <div className="text-right">
+              <span className="text-sm font-medium tabular-nums">{formatUSD(portfolio.totalInvestment)}</span>
+              {exchangeRate > 0 && (
+                <div className="text-[10px] text-muted-foreground">≈ {formatKRW(portfolio.totalInvestment * exchangeRate)}</div>
+              )}
+            </div>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">현재 평가</span>
-            <span className="text-sm font-medium tabular-nums">{formatUSD(portfolio.totalCurrentValue)}</span>
+            <div className="text-right">
+              <span className="text-sm font-medium tabular-nums">{formatUSD(portfolio.totalCurrentValue)}</span>
+              {exchangeRate > 0 && (
+                <div className="text-[10px] text-muted-foreground">≈ {formatKRW(portfolio.totalCurrentValue * exchangeRate)}</div>
+              )}
+            </div>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">총 손익</span>
-            <span className={`text-sm font-semibold tabular-nums ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-              {isPositive ? '+' : ''}{formatUSD(portfolio.totalProfitLoss)} ({isPositive ? '+' : ''}{portfolio.totalProfitLossPercent.toFixed(2)}%)
-            </span>
+            <div className="text-right">
+              <span className={`text-sm font-semibold tabular-nums ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                {isPositive ? '+' : ''}{formatUSD(portfolio.totalProfitLoss)} ({isPositive ? '+' : ''}{portfolio.totalProfitLossPercent.toFixed(2)}%)
+              </span>
+              {exchangeRate > 0 && (
+                <div className={`text-[10px] ${isPositive ? 'text-green-500/70' : 'text-red-500/70'}`}>
+                  ≈ {isPositive ? '+' : ''}{formatKRW(portfolio.totalProfitLoss * exchangeRate)}
+                </div>
+              )}
+            </div>
           </div>
           {hasHoldings && (
             <div className="border-t border-border pt-3 space-y-1.5">
