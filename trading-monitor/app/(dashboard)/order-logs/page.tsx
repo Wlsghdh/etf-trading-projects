@@ -241,12 +241,19 @@ function TradingLogViewer() {
 }
 
 
+function formatKRW(v: number) {
+  if (v >= 100_000_000) return `${(v / 100_000_000).toFixed(1)}억원`;
+  if (v >= 10_000) return `${Math.round(v / 10_000).toLocaleString()}만원`;
+  return `${v.toLocaleString()}원`;
+}
+
 export default function OrderLogsPage() {
   const [orders, setOrders] = useState<KISOrderLog[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [page, setPage] = useState(1);
+  const [exchangeRate, setExchangeRate] = useState(0);
   const pageSize = 50;
 
   const fetchOrders = useCallback(async () => {
@@ -272,6 +279,11 @@ export default function OrderLogsPage() {
   useEffect(() => {
     setIsLoading(true);
     fetchOrders();
+    // 환율 조회
+    fetch(API_ENDPOINTS.BALANCE)
+      .then(r => r.json())
+      .then(d => setExchangeRate(d.exchange_rate || 0))
+      .catch(() => {});
   }, [fetchOrders]);
 
   useInterval(fetchOrders, 10000);
@@ -284,13 +296,18 @@ export default function OrderLogsPage() {
   const pendingCount = todayOrders.filter(o => o.status === 'PENDING').length;
   const unfilledCount = todayOrders.filter(o => o.status === 'UNFILLED').length;
 
+  // 오늘 총 주문 금액 (체결 기준)
+  const todayTotalUSD = todayOrders
+    .filter(o => o.status === 'SUCCESS')
+    .reduce((sum, o) => sum + ((o.price || o.limitPrice || 0) * o.quantity), 0);
+
   const totalPages = Math.ceil(total / pageSize);
   const filterOptions: StatusFilter[] = ['ALL', 'SUCCESS', 'FAILED', 'PENDING', 'UNFILLED'];
 
   return (
     <div className="space-y-6">
       {/* 통계 카드 */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card className="shadow-sm">
           <CardContent className="pt-4 pb-3">
             <div className="text-xs text-muted-foreground">오늘 체결</div>
@@ -313,6 +330,15 @@ export default function OrderLogsPage() {
           <CardContent className="pt-4 pb-3">
             <div className="text-xs text-muted-foreground">미체결 이월</div>
             <div className="text-2xl font-bold text-orange-500">{unfilledCount}</div>
+          </CardContent>
+        </Card>
+        <Card className="shadow-sm">
+          <CardContent className="pt-4 pb-3">
+            <div className="text-xs text-muted-foreground">오늘 체결 금액</div>
+            <div className="text-lg font-bold">${todayTotalUSD.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+            {exchangeRate > 0 && (
+              <div className="text-[10px] text-muted-foreground">≈ {formatKRW(todayTotalUSD * exchangeRate)}</div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -385,10 +411,20 @@ export default function OrderLogsPage() {
                           {order.quantity}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">
-                          {order.limitPrice != null ? `$${order.limitPrice.toFixed(2)}` : '-'}
+                          {order.limitPrice != null ? (
+                            <div>
+                              <div>${order.limitPrice.toFixed(2)}</div>
+                              {exchangeRate > 0 && <div className="text-[10px] text-muted-foreground">{formatKRW(order.limitPrice * exchangeRate)}</div>}
+                            </div>
+                          ) : '-'}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">
-                          {order.price != null ? `$${order.price.toFixed(2)}` : '-'}
+                          {order.price != null ? (
+                            <div>
+                              <div>${order.price.toFixed(2)}</div>
+                              {exchangeRate > 0 && <div className="text-[10px] text-muted-foreground">{formatKRW(order.price * exchangeRate)}</div>}
+                            </div>
+                          ) : '-'}
                         </TableCell>
                         <TableCell>{getStatusBadge(order.status)}</TableCell>
                         <TableCell className="font-mono text-xs text-muted-foreground">
