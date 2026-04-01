@@ -15,7 +15,6 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { fetchPortfolio, type Portfolio } from "@/lib/trading-api"
 import { fetchPredictions, type Prediction } from "@/lib/api"
-import { portfolio as dummyPortfolio, predictions as dummyPredictions } from "@/lib/data"
 import {
   ChartConfig,
   ChartContainer,
@@ -58,7 +57,7 @@ export default function PortfolioPage() {
           const preds = await fetchPredictions()
           setPredictions(preds)
         } catch {
-          setPredictions(dummyPredictions)
+          setPredictions([])
         }
 
         // 포트폴리오 실데이터 로드
@@ -101,8 +100,7 @@ export default function PortfolioPage() {
     loadData()
   }, [])
 
-  // 폴백
-  const portfolio = holdings.length > 0 ? holdings : dummyPortfolio
+  const portfolio = holdings
 
   const totalValue = portfolio.reduce((sum, item) => sum + item.totalValue, 0)
   const totalProfit = portfolio.reduce((sum, item) => sum + item.profit, 0)

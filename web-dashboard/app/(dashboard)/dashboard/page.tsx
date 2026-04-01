@@ -10,7 +10,6 @@ import { fetchPredictions, checkHealth, fetchLatestFactsheet, type Prediction, t
 import { fetchPortfolio, fetchSnapshots, type Portfolio, type SnapshotData } from "@/lib/trading-api"
 import { SNOWBALLING_ETF } from "@/lib/types/snowballing-etf"
 import { Button } from "@/components/ui/button"
-import { portfolio as dummyPortfolio, returns as dummyReturns } from "@/lib/data"
 import {
   ChartConfig,
   ChartContainer,
@@ -112,16 +111,11 @@ export default function DashboardPage() {
     loadData()
   }, [])
 
-  // 폴백: 실데이터 없으면 더미 사용
-  const displayHoldings = holdings.length > 0 ? holdings : dummyPortfolio.slice(0, 5).map(p => ({
-    symbol: p.symbol, name: p.name, totalValue: p.totalValue, profit: p.profit, profitPercent: p.profitPercent,
-  }))
-  const displayChart = chartData.length > 0 ? chartData : dummyReturns.slice(-7).map(r => ({
-    date: r.date, portfolioValue: r.portfolioValue,
-  }))
-  const displayTotalValue = usingRealData ? totalInvested : dummyPortfolio.reduce((s, i) => s + i.totalValue, 0)
-  const displayTotalProfit = usingRealData ? 0 : dummyPortfolio.reduce((s, i) => s + i.profit, 0)
-  const displayCount = usingRealData ? holdingsCount : dummyPortfolio.length
+  const displayHoldings = holdings
+  const displayChart = chartData
+  const displayTotalValue = totalInvested
+  const displayTotalProfit = 0
+  const displayCount = holdingsCount
 
   const topPredictions = predictions.slice(0, 5)
   const summary = {
@@ -148,7 +142,7 @@ export default function DashboardPage() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2 text-yellow-500">
               <AlertCircle className="h-4 w-4" />
-              <span className="text-sm">Trading 서비스 연결 불가 - 데모 데이터 표시 중</span>
+              <span className="text-sm">Trading 서비스 연결 불가 - 매매 시작 후 데이터가 표시됩니다</span>
             </div>
           </CardContent>
         </Card>

@@ -14,7 +14,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { fetchPortfolio, fetchSnapshots, type Portfolio, type SnapshotData } from "@/lib/trading-api"
-import { returns as dummyReturns, portfolio as dummyPortfolio, summary as dummySummary, type ReturnData } from "@/lib/data"
+import type { ReturnData } from "@/lib/data"
 import {
   ChartConfig,
   ChartContainer,
@@ -83,11 +83,29 @@ export default function ReturnsPage() {
     loadData()
   }, [])
 
-  // 폴백
-  const returns = returnsData.length > 1 ? returnsData : dummyReturns
+  const returns = returnsData
 
-  const latestReturn = returns[returns.length - 1]
-  const previousReturn = returns[returns.length - 2] || returns[returns.length - 1]
+  if (!loading && returns.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">수익률 분석</h2>
+          <p className="text-muted-foreground">포트폴리오 성과 및 수익률 추이</p>
+        </div>
+        <Card>
+          <CardContent className="pt-8 pb-8">
+            <div className="text-center text-muted-foreground">
+              <p className="text-lg font-medium">아직 매매 데이터가 없습니다</p>
+              <p className="text-sm mt-2">자동매매가 실행되면 수익률 데이터가 표시됩니다</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  const latestReturn = returns[returns.length - 1] || { cumulativeReturn: 0, dailyReturn: 0, portfolioValue: 0, date: '', benchmarkReturn: 0, benchmarkCumulativeReturn: 0 }
+  const previousReturn = returns[returns.length - 2] || latestReturn
   const avgDailyReturn = returns.reduce((sum, r) => sum + r.dailyReturn, 0) / returns.length
   const maxDailyReturn = Math.max(...returns.map(r => r.dailyReturn))
   const minDailyReturn = Math.min(...returns.map(r => r.dailyReturn))
