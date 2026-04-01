@@ -629,7 +629,7 @@ develop ← 개발 통합 (PR → PM 승인 → 머지)
 4. git push origin feat/내-브랜치
 5. GitHub에서 PR 생성 (base: develop)
 6. PM(주진호) 리뷰 → 머지
-```
+```ssss
 
 ---
 
