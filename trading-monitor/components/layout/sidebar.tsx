@@ -17,6 +17,8 @@ import {
   Logout03Icon,
   FileAttachmentIcon,
   AiChat02Icon,
+  UserGroupIcon,
+  SearchList01Icon,
 } from '@hugeicons/core-free-icons';
 
 const navItems = [
@@ -30,6 +32,8 @@ const navItems = [
   { href: '/calendar', label: '달력', icon: Calendar03Icon },
   { href: '/db-viewer', label: 'DB 뷰어', icon: Database02Icon },
   { href: '/multi-ai', label: '멀티AI', icon: AiChat02Icon },
+  { href: '/community', label: '커뮤니티', icon: UserGroupIcon },
+  { href: '/stocks', label: '종목열람', icon: SearchList01Icon },
   { href: '/settings', label: '설정', icon: Settings02Icon },
 ];
 
