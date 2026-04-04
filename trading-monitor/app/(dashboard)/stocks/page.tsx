@@ -204,6 +204,7 @@ export default function StocksPage() {
   const [favorites, setFavorites] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [activeSymbol, setActiveSymbol] = useState<string | null>(null);
+  const [showFavorites, setShowFavorites] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setFavorites(loadFavorites()); }, []);
@@ -280,27 +281,54 @@ export default function StocksPage() {
         <Button size="sm" onClick={handleSearch} disabled={!search.trim()}>
           검색
         </Button>
+        <Button
+          size="sm"
+          variant={showFavorites ? 'default' : 'outline'}
+          onClick={() => setShowFavorites(!showFavorites)}
+          className={showFavorites ? 'bg-red-500 hover:bg-red-600 text-white' : ''}
+        >
+          <HugeiconsIcon icon={FavouriteIcon} className="mr-1 h-3.5 w-3.5" strokeWidth={showFavorites ? 3 : 2} />
+          관심종목 ({favorites.length})
+        </Button>
       </div>
 
-      {/* 즐겨찾기 바 */}
-      {favorites.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto">
-          <span className="shrink-0 text-xs font-medium text-muted-foreground">
-            <HugeiconsIcon icon={FavouriteIcon} className="mr-1 inline h-3 w-3 text-red-500" strokeWidth={3} />
-            즐겨찾기
-          </span>
-          {favorites.map(sym => (
-            <Button
-              key={sym}
-              variant="outline"
-              size="xs"
-              onClick={() => setActiveSymbol(sym)}
-              className="shrink-0"
-            >
-              {sym}
-            </Button>
-          ))}
-        </div>
+      {/* 관심종목 패널 */}
+      {showFavorites && (
+        <Card size="sm">
+          <CardHeader className="border-b">
+            <CardTitle className="flex items-center gap-1.5 text-sm">
+              <HugeiconsIcon icon={FavouriteIcon} className="h-4 w-4 text-red-500" strokeWidth={3} />
+              관심종목
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {favorites.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                종목 검색 후 하트를 눌러 관심종목을 추가하세요
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {favorites.map(sym => (
+                  <Button
+                    key={sym}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setActiveSymbol(sym); setShowFavorites(false); }}
+                    className="gap-1.5"
+                  >
+                    <span className="font-mono font-bold">{sym}</span>
+                    <button
+                      onClick={e => { e.stopPropagation(); toggleFav(sym); }}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <HugeiconsIcon icon={Cancel01Icon} className="h-3 w-3" strokeWidth={2} />
+                    </button>
+                  </Button>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* 뉴스 + 인기 종목 */}

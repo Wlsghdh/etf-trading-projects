@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   FavouriteIcon,
@@ -29,27 +30,65 @@ interface Post {
   id: string;
   author: string;
   content: string;
-  image?: string; // base64 data URL or external URL
+  image?: string;
   ticker?: string;
   likes: string[];
   comments: Comment[];
   createdAt: string;
 }
 
-// ── Storage ──
+// ── API ──
 
-const POSTS_KEY = 'community_posts';
-const USER_KEY = 'community_user';
+const API = '/trading/api/community';
 
-function loadPosts(): Post[] {
-  if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem(POSTS_KEY) || '[]'); } catch { return []; }
+async function apiGetPosts(): Promise<Post[]> {
+  const res = await fetch(API, { cache: 'no-store' });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.posts || [];
 }
-function savePosts(posts: Post[]) { localStorage.setItem(POSTS_KEY, JSON.stringify(posts)); }
+
+async function apiCreatePost(author: string, content: string, image?: string, ticker?: string): Promise<Post | null> {
+  const res = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'create', author, content, image, ticker }),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.post;
+}
+
+async function apiLike(postId: string, user: string) {
+  await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'like', postId, user }),
+  });
+}
+
+async function apiComment(postId: string, user: string, text: string) {
+  await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'comment', postId, user, text }),
+  });
+}
+
+async function apiDelete(postId: string, user: string) {
+  await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete', postId, user }),
+  });
+}
+
+// ── User ──
+
 function getUser(): string {
   if (typeof window === 'undefined') return 'User';
-  let u = localStorage.getItem(USER_KEY);
-  if (!u) { u = `User_${Math.random().toString(36).slice(2, 6)}`; localStorage.setItem(USER_KEY, u); }
+  let u = localStorage.getItem('community_user');
+  if (!u) { u = `User_${Math.random().toString(36).slice(2, 6)}`; localStorage.setItem('community_user', u); }
   return u;
 }
 
@@ -67,12 +106,13 @@ function timeAgo(d: string): string {
 // ── 게시글 작성 모달 ──
 function WriteModal({ user, onPost, onClose }: {
   user: string;
-  onPost: (post: Post) => void;
+  onPost: (content: string, image?: string, ticker?: string) => void;
   onClose: () => void;
 }) {
   const [content, setContent] = useState('');
   const [ticker, setTicker] = useState('');
   const [image, setImage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -84,18 +124,11 @@ function WriteModal({ user, onPost, onClose }: {
     reader.readAsDataURL(file);
   };
 
-  const submit = () => {
-    if (!content.trim()) return;
-    onPost({
-      id: crypto.randomUUID(),
-      author: user,
-      content: content.trim(),
-      image: image || undefined,
-      ticker: ticker.trim().toUpperCase() || undefined,
-      likes: [],
-      comments: [],
-      createdAt: new Date().toISOString(),
-    });
+  const submit = async () => {
+    if (!content.trim() || submitting) return;
+    setSubmitting(true);
+    await onPost(content.trim(), image || undefined, ticker.trim().toUpperCase() || undefined);
+    setSubmitting(false);
     onClose();
   };
 
@@ -118,37 +151,29 @@ function WriteModal({ user, onPost, onClose }: {
           className="mb-3 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/50"
         />
 
-        {/* 이미지 미리보기 */}
         {image && (
           <div className="relative mb-3">
             <img src={image} alt="" className="max-h-48 w-full rounded-lg border border-border object-cover" />
-            <button
-              onClick={() => setImage(null)}
-              className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white hover:bg-black/80"
-            >
+            <button onClick={() => setImage(null)} className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white hover:bg-black/80">
               <HugeiconsIcon icon={Cancel01Icon} className="h-4 w-4" strokeWidth={2} />
             </button>
           </div>
         )}
 
         <div className="flex items-center gap-2">
-          {/* 사진 첨부 */}
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
           <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
             <HugeiconsIcon icon={Image02Icon} className="mr-1 h-3.5 w-3.5" strokeWidth={2} />
             사진
           </Button>
-
-          {/* 종목 태그 */}
           <input
             value={ticker}
             onChange={e => setTicker(e.target.value)}
             placeholder="종목 태그"
             className="w-24 rounded border border-border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary/50"
           />
-
-          <Button className="ml-auto" size="sm" disabled={!content.trim()} onClick={submit}>
-            게시
+          <Button className="ml-auto" size="sm" disabled={!content.trim() || submitting} onClick={submit}>
+            {submitting ? '게시 중...' : '게시'}
           </Button>
         </div>
       </div>
@@ -170,7 +195,6 @@ function PostCard({ post, user, onLike, onComment, onDelete }: {
   return (
     <Card size="sm">
       <CardContent className="space-y-3">
-        {/* 헤더 */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
@@ -191,17 +215,14 @@ function PostCard({ post, user, onLike, onComment, onDelete }: {
           )}
         </div>
 
-        {/* 본문 */}
         <p className="text-sm whitespace-pre-wrap leading-relaxed">{post.content}</p>
 
-        {/* 이미지 */}
         {post.image && (
           <div className="overflow-hidden rounded-lg border border-border">
             <img src={post.image} alt="" className="w-full max-h-96 object-cover" />
           </div>
         )}
 
-        {/* 좋아요 + 댓글 */}
         <div className="flex items-center gap-5 border-t border-border pt-2.5">
           <button
             onClick={() => onLike(post.id)}
@@ -219,12 +240,9 @@ function PostCard({ post, user, onLike, onComment, onDelete }: {
           </button>
         </div>
 
-        {/* 댓글 */}
         {showComments && (
           <div className="space-y-2 border-t border-border pt-2">
-            {post.comments.length === 0 && (
-              <p className="text-xs text-muted-foreground">댓글이 없습니다</p>
-            )}
+            {post.comments.length === 0 && <p className="text-xs text-muted-foreground">댓글이 없습니다</p>}
             {post.comments.map(c => (
               <div key={c.id} className="flex gap-2 text-sm">
                 <span className="shrink-0 font-semibold">{c.author}</span>
@@ -265,44 +283,48 @@ export default function CommunityPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [user, setUser] = useState('User');
   const [showWrite, setShowWrite] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    setPosts(loadPosts());
-    setUser(getUser());
-  }, []);
-
-  const addPost = (post: Post) => {
-    const updated = [post, ...posts];
-    setPosts(updated);
-    savePosts(updated);
+  const loadData = async () => {
+    const p = await apiGetPosts();
+    setPosts(p);
+    setLoading(false);
   };
 
-  const toggleLike = (id: string) => {
-    const updated = posts.map(p => {
+  useEffect(() => {
+    setUser(getUser());
+    loadData();
+  }, []);
+
+  const handlePost = async (content: string, image?: string, ticker?: string) => {
+    const post = await apiCreatePost(user, content, image, ticker);
+    if (post) setPosts(prev => [post, ...prev]);
+  };
+
+  const handleLike = async (id: string) => {
+    // 즉시 UI 업데이트
+    setPosts(prev => prev.map(p => {
       if (p.id !== id) return p;
       const liked = p.likes.includes(user);
       return { ...p, likes: liked ? p.likes.filter(u => u !== user) : [...p.likes, user] };
-    });
-    setPosts(updated);
-    savePosts(updated);
+    }));
+    await apiLike(id, user);
   };
 
-  const addComment = (id: string, text: string) => {
-    const c: Comment = { id: crypto.randomUUID(), author: user, content: text, createdAt: new Date().toISOString() };
-    const updated = posts.map(p => p.id === id ? { ...p, comments: [...p.comments, c] } : p);
-    setPosts(updated);
-    savePosts(updated);
+  const handleComment = async (id: string, text: string) => {
+    const tempComment: Comment = { id: 'temp', author: user, content: text, createdAt: new Date().toISOString() };
+    setPosts(prev => prev.map(p => p.id === id ? { ...p, comments: [...p.comments, tempComment] } : p));
+    await apiComment(id, user, text);
+    loadData(); // 서버 데이터 동기화
   };
 
-  const deletePost = (id: string) => {
-    const updated = posts.filter(p => p.id !== id);
-    setPosts(updated);
-    savePosts(updated);
+  const handleDelete = async (id: string) => {
+    setPosts(prev => prev.filter(p => p.id !== id));
+    await apiDelete(id, user);
   };
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold">커뮤니티</h1>
@@ -320,11 +342,13 @@ export default function CommunityPage() {
         </div>
       </div>
 
-      {/* 작성 모달 */}
-      {showWrite && <WriteModal user={user} onPost={addPost} onClose={() => setShowWrite(false)} />}
+      {showWrite && <WriteModal user={user} onPost={handlePost} onClose={() => setShowWrite(false)} />}
 
-      {/* 피드 */}
-      {posts.length === 0 ? (
+      {loading ? (
+        <div className="space-y-4">
+          {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-40" />)}
+        </div>
+      ) : posts.length === 0 ? (
         <div className="py-20 text-center text-muted-foreground">
           <HugeiconsIcon icon={Comment02Icon} className="mx-auto mb-3 h-14 w-14 opacity-20" strokeWidth={1.5} />
           <p className="text-sm font-medium">아직 게시물이 없습니다</p>
@@ -333,7 +357,7 @@ export default function CommunityPage() {
       ) : (
         <div className="space-y-4">
           {posts.map(post => (
-            <PostCard key={post.id} post={post} user={user} onLike={toggleLike} onComment={addComment} onDelete={deletePost} />
+            <PostCard key={post.id} post={post} user={user} onLike={handleLike} onComment={handleComment} onDelete={handleDelete} />
           ))}
         </div>
       )}
