@@ -3,6 +3,7 @@
 import Image from "next/image"
 
 import {
+  Bot,
   Briefcase,
   FileText,
   Home,
@@ -55,6 +56,11 @@ const menuItems = [
     title: "팩트시트",
     url: "/factsheet",
     icon: FileText,
+  },
+  {
+    title: "멀티AI",
+    url: "/multi-ai",
+    icon: Bot,
   },
 ]
 
