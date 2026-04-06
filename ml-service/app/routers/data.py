@@ -51,6 +51,15 @@ def get_stock_data(
             detail=f"No data available for {symbol}"
         )
 
+    import math
+
+    def safe_float(val):
+        """NaN/Inf를 None으로 변환"""
+        if val is None:
+            return None
+        f = float(val)
+        return None if (math.isnan(f) or math.isinf(f)) else f
+
     # DataFrame을 Pydantic 모델로 변환
     data_points = [
         StockDataPoint(
@@ -59,9 +68,9 @@ def get_stock_data(
             high=float(row["high"]),
             low=float(row["low"]),
             close=float(row["close"]),
-            volume=int(row["volume"]),
-            rsi=float(row["rsi"]) if row["rsi"] is not None else None,
-            macd=float(row["macd"]) if row["macd"] is not None else None
+            volume=int(row["volume"]) if not math.isnan(float(row["volume"])) else 0,
+            rsi=safe_float(row.get("rsi")),
+            macd=safe_float(row.get("macd")),
         )
         for _, row in df.iterrows()
     ]

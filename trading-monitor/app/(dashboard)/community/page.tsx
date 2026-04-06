@@ -83,13 +83,12 @@ async function apiDelete(postId: string, user: string) {
   });
 }
 
-// ── User ──
+// ── User (로그인 쿠키 기반) ──
 
 function getUser(): string {
-  if (typeof window === 'undefined') return 'User';
-  let u = localStorage.getItem('community_user');
-  if (!u) { u = `User_${Math.random().toString(36).slice(2, 6)}`; localStorage.setItem('community_user', u); }
-  return u;
+  if (typeof document === 'undefined') return 'User';
+  const match = document.cookie.match(/(^| )user-name=([^;]+)/);
+  return match ? decodeURIComponent(match[2]) : 'User';
 }
 
 function timeAgo(d: string): string {

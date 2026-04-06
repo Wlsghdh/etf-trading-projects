@@ -6,8 +6,26 @@ import { HoldingsTable } from '@/components/portfolio/holdings-table';
 import { NumberTicker } from '@/components/ui/number-ticker';
 import { Skeleton } from '@/components/ui/skeleton';
 
+function getCookie(name: string): string {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  return match ? decodeURIComponent(match[2]) : '';
+}
+
 export default function PortfolioPage() {
   const { data: portfolio, isLoading } = usePortfolio();
+
+  // 일반 유저: KIS 없음
+  if (typeof document !== 'undefined' && getCookie('user-role') !== 'admin') {
+    return (
+      <div className="flex items-center justify-center py-20 text-muted-foreground">
+        <div className="text-center">
+          <p className="text-sm">KIS 계좌가 연결되지 않은 계정입니다.</p>
+          <p className="text-xs mt-1">관리자에게 문의하세요.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

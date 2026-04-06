@@ -30,17 +30,29 @@ export async function GET() {
     if (portRes.ok) {
       const portData = await portRes.json();
       for (const p of portData.holdings || []) {
-        purchasePrices[p.etf_code] = p.price;
+        if (p.etf_code && p.price > 0) {
+          purchasePrices[p.etf_code] = p.price;
+        }
       }
     }
+
+    // DB 최신 종가도 조회 (추가 fallback)
+    let dbPrices: Record<string, number> = {};
+    try {
+      const pricesRes = await fetch(`${TRADING_SERVICE_URL}/api/trading/prices`, { signal: AbortSignal.timeout(3000) });
+      if (pricesRes.ok) dbPrices = await pricesRes.json();
+    } catch { /* ignore */ }
 
     const result = orders.map((o: Record<string, unknown>) => {
       const etfCode = (o.etf_code as string) || '';
       let price = (o.price as number) || 0;
+      const limitPrice = (o.limit_price as number) || 0;
 
-      // price가 0이면 purchases에서 가격 가져오기
-      if (price === 0 && purchasePrices[etfCode]) {
-        price = purchasePrices[etfCode];
+      // price가 0이면 다단계 fallback
+      if (price <= 0) {
+        if (limitPrice > 0) price = limitPrice;
+        else if (purchasePrices[etfCode]) price = purchasePrices[etfCode];
+        else if (dbPrices[etfCode]) price = dbPrices[etfCode];
       }
 
       return {

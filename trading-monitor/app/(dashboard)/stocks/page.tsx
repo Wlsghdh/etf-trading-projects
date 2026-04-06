@@ -22,6 +22,12 @@ function loadFavorites(): string[] {
 }
 function saveFavorites(favs: string[]) { localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs)); }
 
+function getUser(): string {
+  if (typeof document === 'undefined') return 'User';
+  const match = document.cookie.match(/(^| )user-name=([^;]+)/);
+  return match ? decodeURIComponent(match[2]) : 'User';
+}
+
 // ── TradingView 거래소 매핑 ──
 const TV_EXCHANGE: Record<string, string> = {
   QQQ: 'NASDAQ', TQQQ: 'NASDAQ', SQQQ: 'NASDAQ', AAPL: 'NASDAQ', MSFT: 'NASDAQ',
@@ -39,7 +45,23 @@ function getTVSymbol(sym: string) {
   return TV_EXCHANGE[s] ? `${TV_EXCHANGE[s]}:${s}` : s;
 }
 
-// ── TradingView 뉴스 타임라인 위젯 ──
+// ── Types ──
+
+interface NewsItem {
+  id: string;
+  title: string;
+  link: string;
+  source: string;
+  pubDate: string;
+  symbol?: string;
+  goodCount: number;
+  badCount: number;
+  goodUsers: string[];
+  badUsers: string[];
+}
+
+// ── TradingView Widgets ──
+
 function TVTimeline() {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -78,7 +100,6 @@ function TVTimeline() {
   return <div ref={ref} className="h-full w-full" />;
 }
 
-// ── TradingView Hotlists 위젯 ──
 function TVHotlists() {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -117,7 +138,6 @@ function TVHotlists() {
   return <div ref={ref} className="h-full w-full" />;
 }
 
-// ── TradingView Advanced Chart (종목 상세) ──
 function TVChart({ symbol }: { symbol: string }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -164,7 +184,6 @@ function TVChart({ symbol }: { symbol: string }) {
   return <div ref={ref} className="h-full w-full" />;
 }
 
-// ── TradingView Symbol Info ──
 function TVSymbolInfo({ symbol }: { symbol: string }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -199,15 +218,224 @@ function TVSymbolInfo({ symbol }: { symbol: string }) {
   return <div ref={ref} className="w-full" />;
 }
 
+// ── 뉴스 카드 (Good/Bad 투표) ──
+
+function NewsCard({ item, user, onVote }: {
+  item: NewsItem;
+  user: string;
+  onVote: (newsId: string, action: 'good' | 'bad') => void;
+}) {
+  const totalVotes = item.goodCount + item.badCount;
+  const sentiment = totalVotes > 0
+    ? (item.goodCount - item.badCount) / totalVotes
+    : 0;
+
+  const userVotedGood = item.goodUsers.includes(user);
+  const userVotedBad = item.badUsers.includes(user);
+
+  // Save 앱 스타일: 투표 없으면 중립, good 많으면 초록 배경+테두리, bad 많으면 빨간 배경+테두리
+  let cardStyle = 'border-border/40 bg-card'; // 기본 (투표 없음)
+  if (totalVotes > 0) {
+    if (sentiment > 0) {
+      // 호재 (Good 우세) - 초록
+      cardStyle = 'border-green-500 bg-green-500/8 shadow-[0_0_8px_rgba(34,197,94,0.15)]';
+    } else if (sentiment < 0) {
+      // 악재 (Bad 우세) - 빨강
+      cardStyle = 'border-red-500 bg-red-500/8 shadow-[0_0_8px_rgba(239,68,68,0.15)]';
+    } else {
+      // 동률 - 노랑
+      cardStyle = 'border-yellow-500/60 bg-yellow-500/5';
+    }
+  }
+
+  const timeAgo = (dateStr: string) => {
+    const m = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
+    if (m < 1) return '방금';
+    if (m < 60) return `${m}분 전`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}시간 전`;
+    const d = Math.floor(h / 24);
+    return `${d}일 전`;
+  };
+
+  return (
+    <div className={`rounded-lg border-2 ${cardStyle} p-3 transition-all duration-300`}>
+      <div className="flex gap-3">
+        <div className="flex-1 min-w-0">
+          <a
+            href={item.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm font-medium hover:text-primary line-clamp-2 leading-snug"
+          >
+            {item.title}
+          </a>
+          <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span>{item.source}</span>
+            <span>&#183;</span>
+            <span>{timeAgo(item.pubDate)}</span>
+            {item.symbol && (
+              <>
+                <span>&#183;</span>
+                <Badge variant="secondary" className="text-[9px] px-1 py-0">${item.symbol}</Badge>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* 투표 버튼 */}
+        <div className="flex flex-col items-center gap-1 shrink-0">
+          <button
+            onClick={() => onVote(item.id, 'good')}
+            className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
+              userVotedGood
+                ? 'bg-green-500/20 text-green-400'
+                : 'bg-muted text-muted-foreground hover:bg-green-500/10 hover:text-green-400'
+            }`}
+          >
+            <span>&#128077;</span>
+            <span>{item.goodCount}</span>
+          </button>
+          <button
+            onClick={() => onVote(item.id, 'bad')}
+            className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
+              userVotedBad
+                ? 'bg-red-500/20 text-red-400'
+                : 'bg-muted text-muted-foreground hover:bg-red-500/10 hover:text-red-400'
+            }`}
+          >
+            <span>&#128078;</span>
+            <span>{item.badCount}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 감성 바 */}
+      {totalVotes > 0 && (
+        <div className="mt-2 flex h-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className="bg-green-500 transition-all"
+            style={{ width: `${(item.goodCount / totalVotes) * 100}%` }}
+          />
+          <div
+            className="bg-red-500 transition-all"
+            style={{ width: `${(item.badCount / totalVotes) * 100}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 뉴스 패널 (Top Stories) ──
+
+function NewsPanel({ symbol, user }: { symbol?: string; user: string }) {
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchNews = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (symbol) params.set('symbol', symbol);
+      else params.set('category', 'market');
+
+      const res = await fetch(`/trading/api/news?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setNews(data.news || []);
+      }
+    } catch { /* ignore */ }
+    setLoading(false);
+  }, [symbol]);
+
+  useEffect(() => {
+    fetchNews();
+    // 1시간마다 갱신
+    const interval = setInterval(fetchNews, 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchNews]);
+
+  const handleVote = async (newsId: string, action: 'good' | 'bad') => {
+    // 즉시 UI 업데이트 (optimistic)
+    setNews(prev => prev.map(item => {
+      if (item.id !== newsId) return item;
+      const newItem = { ...item };
+      if (action === 'good') {
+        if (item.goodUsers.includes(user)) {
+          newItem.goodUsers = item.goodUsers.filter(u => u !== user);
+          newItem.goodCount--;
+        } else {
+          if (item.badUsers.includes(user)) {
+            newItem.badUsers = item.badUsers.filter(u => u !== user);
+            newItem.badCount--;
+          }
+          newItem.goodUsers = [...item.goodUsers, user];
+          newItem.goodCount++;
+        }
+      } else {
+        if (item.badUsers.includes(user)) {
+          newItem.badUsers = item.badUsers.filter(u => u !== user);
+          newItem.badCount--;
+        } else {
+          if (item.goodUsers.includes(user)) {
+            newItem.goodUsers = item.goodUsers.filter(u => u !== user);
+            newItem.goodCount--;
+          }
+          newItem.badUsers = [...item.badUsers, user];
+          newItem.badCount++;
+        }
+      }
+      return newItem;
+    }));
+
+    // 서버 업데이트
+    await fetch('/trading/api/news', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, newsId, user }),
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {[...Array(5)].map((_, i) => (
+          <div key={i} className="h-20 animate-pulse rounded-lg bg-muted" />
+        ))}
+      </div>
+    );
+  }
+
+  if (news.length === 0) {
+    return (
+      <div className="py-8 text-center text-sm text-muted-foreground">
+        뉴스를 불러올 수 없습니다
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {news.map(item => (
+        <NewsCard key={item.id} item={item} user={user} onVote={handleVote} />
+      ))}
+    </div>
+  );
+}
+
 // ── 메인 ──
 export default function StocksPage() {
   const [favorites, setFavorites] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [activeSymbol, setActiveSymbol] = useState<string | null>(null);
   const [showFavorites, setShowFavorites] = useState(false);
+  const [user, setUser] = useState('User');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { setFavorites(loadFavorites()); }, []);
+  useEffect(() => {
+    setFavorites(loadFavorites());
+    setUser(getUser());
+  }, []);
 
   const toggleFav = useCallback((sym: string) => {
     setFavorites(prev => {
@@ -222,7 +450,7 @@ export default function StocksPage() {
     if (sym) setActiveSymbol(sym);
   };
 
-  // 종목 상세 보기
+  // ── 종목 상세 보기 ──
   if (activeSymbol) {
     const isFav = favorites.includes(activeSymbol);
     return (
@@ -248,15 +476,43 @@ export default function StocksPage() {
         {/* Symbol Info */}
         <TVSymbolInfo symbol={activeSymbol} />
 
-        {/* 차트 */}
-        <div className="flex-1 min-h-0 rounded-lg border border-border overflow-hidden">
-          <TVChart symbol={activeSymbol} />
+        {/* 뉴스 + 차트 2단 레이아웃 */}
+        <div className="flex flex-1 min-h-0 gap-3">
+          {/* 차트 (메인) */}
+          <div className="flex-1 min-h-0 rounded-lg border border-border overflow-hidden">
+            <TVChart symbol={activeSymbol} />
+          </div>
+
+          {/* 관련 뉴스 (사이드) */}
+          <Card size="sm" className="w-96 shrink-0 min-h-0 hidden xl:flex xl:flex-col">
+            <CardHeader className="border-b py-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                {activeSymbol} 관련 뉴스
+                <Badge variant="outline" className="text-[10px]">1h 갱신</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-y-auto p-3">
+              <NewsPanel symbol={activeSymbol} user={user} />
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 모바일/태블릿에서 뉴스 (하단) */}
+        <div className="xl:hidden">
+          <Card size="sm">
+            <CardHeader className="border-b py-2">
+              <CardTitle className="text-sm">{activeSymbol} 관련 뉴스</CardTitle>
+            </CardHeader>
+            <CardContent className="max-h-80 overflow-y-auto p-3">
+              <NewsPanel symbol={activeSymbol} user={user} />
+            </CardContent>
+          </Card>
         </div>
       </div>
     );
   }
 
-  // 메인 (검색 + 뉴스)
+  // ── 메인 (검색 + 뉴스) ──
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col gap-4">
       {/* 검색 바 */}
@@ -331,12 +587,28 @@ export default function StocksPage() {
         </Card>
       )}
 
-      {/* 뉴스 + 인기 종목 */}
+      {/* 뉴스 + TradingView 타임라인 + 인기 종목 */}
       <div className="flex flex-1 min-h-0 gap-4">
-        {/* 뉴스 타임라인 */}
+        {/* Top Stories (Good/Bad 투표) */}
         <Card size="sm" className="flex-1 min-h-0">
           <CardHeader className="border-b">
-            <CardTitle className="text-sm">주식 뉴스</CardTitle>
+            <CardTitle className="text-sm flex items-center gap-2">
+              Top Stories
+              <Badge variant="outline" className="text-[10px]">1h 갱신</Badge>
+              <span className="ml-auto text-[10px] text-muted-foreground font-normal">
+                &#128077; Good / &#128078; Bad 투표로 민심을 확인하세요
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="h-[calc(100%-3rem)] overflow-y-auto p-3">
+            <NewsPanel user={user} />
+          </CardContent>
+        </Card>
+
+        {/* TradingView 뉴스 타임라인 */}
+        <Card size="sm" className="flex-1 min-h-0 hidden lg:flex lg:flex-col">
+          <CardHeader className="border-b">
+            <CardTitle className="text-sm">실시간 마켓 뉴스</CardTitle>
           </CardHeader>
           <CardContent className="h-[calc(100%-3rem)] p-0">
             <TVTimeline />
@@ -344,7 +616,7 @@ export default function StocksPage() {
         </Card>
 
         {/* 인기 종목 */}
-        <Card size="sm" className="w-80 shrink-0 min-h-0 hidden lg:flex lg:flex-col">
+        <Card size="sm" className="w-72 shrink-0 min-h-0 hidden xl:flex xl:flex-col">
           <CardHeader className="border-b">
             <CardTitle className="text-sm">인기 종목</CardTitle>
           </CardHeader>

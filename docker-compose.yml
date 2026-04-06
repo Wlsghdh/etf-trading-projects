@@ -125,6 +125,8 @@ services:
       - TRADING_SERVICE_URL=http://trading-service:8002
       - ML_SERVICE_URL=http://ml-service:8000
       - SCRAPER_SERVICE_URL=http://scraper-service:8001
+    volumes:
+      - ./trading-monitor/data:/app/data
     restart: unless-stopped
     networks:
       - etf-network
