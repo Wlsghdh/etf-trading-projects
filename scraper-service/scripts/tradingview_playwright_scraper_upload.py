@@ -341,6 +341,55 @@ class TradingViewScraper:
 
         await asyncio.sleep(3)  # 추가 로딩 대기
 
+    async def dismiss_modal_dialogs(self):
+        """
+        TradingView 모달 다이얼로그(팝업)를 감지하고 닫는다.
+        광고, 업그레이드 안내, 공지 등의 팝업이 클릭을 가로막는 문제를 해결.
+        """
+        try:
+            modal = self.page.locator(".tv-dialog__modal-container")
+            if await modal.count() > 0:
+                logger.info("모달 다이얼로그 감지됨, 닫는 중...")
+
+                # 방법 1: 모달 내 닫기 버튼 클릭
+                close_selectors = [
+                    ".tv-dialog__modal-container button[aria-label='Close']",
+                    ".tv-dialog__modal-container button[aria-label='닫기']",
+                    ".tv-dialog__modal-container [class*='close']",
+                    ".tv-dialog__modal-container button:has(svg)",
+                ]
+                closed = False
+                for selector in close_selectors:
+                    try:
+                        close_btn = self.page.locator(selector).first
+                        if await close_btn.count() > 0:
+                            await close_btn.click(timeout=2000)
+                            closed = True
+                            logger.info(f"모달 닫기 성공: {selector}")
+                            break
+                    except Exception:
+                        continue
+
+                # 방법 2: ESC 키로 닫기
+                if not closed:
+                    await self.page.keyboard.press("Escape")
+                    await asyncio.sleep(0.5)
+                    logger.info("모달 닫기 시도: ESC 키")
+
+                # 방법 3: 모달 외부 영역 클릭
+                if await modal.count() > 0:
+                    try:
+                        await self.page.locator(".tv-dialog__modal-container").first.evaluate(
+                            "el => el.remove()"
+                        )
+                        logger.info("모달 강제 제거 완료")
+                    except Exception:
+                        pass
+
+                await asyncio.sleep(0.5)
+        except Exception as e:
+            logger.warning(f"모달 닫기 중 오류 (무시): {e}")
+
     async def search_and_select_symbol(self, symbol: str) -> bool:
         """
         심볼 검색 및 선택
@@ -354,6 +403,9 @@ class TradingViewScraper:
         logger.info(f"심볼 검색: {symbol}")
 
         try:
+            # 모달 다이얼로그가 있으면 먼저 닫기
+            await self.dismiss_modal_dialogs()
+
             # 상단 툴바의 심볼 검색 버튼 클릭 (고정 ID 사용)
             symbol_btn = self.page.locator("#header-toolbar-symbol-search")
             await symbol_btn.click(timeout=5000)

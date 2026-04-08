@@ -39,7 +39,7 @@ sectors:
     - { symbol: FTNT, exchange: NASDAQ }
     - { symbol: MPWR, exchange: NASDAQ }
     - { symbol: IT, exchange: NYSE }
-    - { symbol: "True", exchange: NASDAQ }
+    - { symbol: "ON", exchange: NASDAQ }  # ON Semiconductor (YAML boolean 충돌 방지)
     - { symbol: FSLR, exchange: NASDAQ }
     - { symbol: CTSH, exchange: NASDAQ }
     - { symbol: ANSS, exchange: NASDAQ }

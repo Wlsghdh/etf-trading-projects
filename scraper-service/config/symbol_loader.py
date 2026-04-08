@@ -36,6 +36,16 @@ def load_symbols(config_path: str = None) -> Tuple[List[str], Set[str], Dict[str
             symbol = item["symbol"]
             exchange = item.get("exchange", "NASDAQ")
 
+            # YAML boolean 변환 방지: True/False/None 등 비문자열 → 문자열 강제 변환
+            # YAML에서 ON, OFF, YES, NO, TRUE, FALSE 등이 boolean으로 자동 변환되는 문제
+            if not isinstance(symbol, str):
+                if symbol is True:
+                    symbol = "ON"  # YAML True → ON Semiconductor
+                elif symbol is False:
+                    symbol = "OFF"
+                else:
+                    symbol = str(symbol)
+
             stock_list.append(symbol)
             sector_map[symbol] = sector
 

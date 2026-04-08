@@ -48,10 +48,12 @@ export interface KISOrderLog {
   orderType: string;  // BUY / SELL / BUY_FIXED
   etfCode: string;
   quantity: number;
-  price: number | null;       // 체결 가격
-  limitPrice: number | null;  // 지정가 (전일 종가)
-  orderId: string | null;     // KIS 주문번호
-  status: string;             // SUCCESS / FAILED / PENDING / UNFILLED / CANCELLED
+  price: number | null;           // 체결 가격 (보정 후)
+  originalPrice: number | null;   // 원본 체결 가격 (KIS 원시값)
+  limitPrice: number | null;      // 지정가 (전일 종가)
+  priceSource: string | null;     // 가격 출처: null=원본, 'limit'=지정가, 'kis'=잔고, 'portfolio'=매수가, 'db'=DB종가
+  orderId: string | null;         // KIS 주문번호
+  status: string;                 // SUCCESS / FAILED / PENDING / UNFILLED / CANCELLED
   errorMessage: string | null;
   retryCount: number;
   createdAt: string;

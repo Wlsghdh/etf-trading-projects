@@ -369,6 +369,45 @@ async def get_balance(db: Session = Depends(get_db)):
         )
 
 
+@router.get("/present-balance")
+async def get_present_balance():
+    """KIS 체결기준 현재잔고 조회 (실시간 손익 + 총자산).
+
+    inquire-present-balance API를 호출하여 KIS가 직접 계산한
+    매수금액/평가금액/평가손익/수익률을 가져온다.
+    """
+    from app.services.kis_client import get_kis_client
+    from app.schemas import PresentBalanceResponse, PresentBalanceHolding
+
+    kis = get_kis_client()
+    exchange_rate = await _get_exchange_rate()
+
+    info = await kis.get_present_balance()
+
+    if not info.success:
+        return PresentBalanceResponse(
+            success=False,
+            error=info.error,
+            exchange_rate=round(exchange_rate, 2),
+        )
+
+    return PresentBalanceResponse(
+        success=True,
+        total_purchase_amount=info.total_purchase_amount,
+        total_evaluation_amount=info.total_evaluation_amount,
+        total_profit_loss=info.total_profit_loss,
+        profit_loss_rate=info.profit_loss_rate,
+        total_deposit=info.total_deposit,
+        withdrawable_amount=info.withdrawable_amount,
+        usd_buy_amount=info.usd_buy_amount,
+        usd_eval_amount=info.usd_eval_amount,
+        usd_deposit=info.usd_deposit,
+        foreign_total_krw=info.foreign_total_krw,
+        exchange_rate=round(exchange_rate, 2),
+        holdings=[PresentBalanceHolding(**h) for h in info.holdings],
+    )
+
+
 @router.get("/prices")
 def get_latest_prices(symbols: str = "", db: Session = Depends(get_db)):
     """보유 종목의 최신 종가 조회 (DB 기반)"""

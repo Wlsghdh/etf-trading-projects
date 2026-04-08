@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     fixed_ratio: float = 0.3  # 고정 편입 비율
     top_n_etfs: int = 100  # 매수 종목 수
     cycle_trading_days: int = 63  # 순환 주기 (거래일)
-    fixed_etf_codes: list[str] = ["QQQ"]  # 30% 고정 편입 ETF 코드 목록
+    fixed_etf_codes: list[str] = ["QQQM"]  # 30% 고정 편입 ETF 코드 목록 (QQQ → QQQM, 가격 부담 완화)
     order_type: str = "limit"  # "market" (시장가) | "limit" (지정가: 전일 종가)
 
     # 해외주식 설정
