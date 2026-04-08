@@ -8,26 +8,26 @@ const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://ml-service:8000';
 
 async function getLatestPrices(symbols: string[]): Promise<Record<string, number>> {
   const prices: Record<string, number> = {};
+  if (symbols.length === 0) return prices;
 
-  // 1. ML service DB tables API에서 각 종목 최신 종가 조회
-  for (const sym of symbols.slice(0, 20)) {  // 최대 20종목
-    try {
-      const res = await fetch(
-        `${ML_SERVICE_URL}/api/db/tables/${sym}_D/data?db_name=etf2_db&limit=1&offset=0`,
-        { signal: AbortSignal.timeout(3000) }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const rows = data.rows || [];
-        if (rows.length > 0) {
-          const close = parseFloat(rows[0].close || '0');
-          if (close > 0) prices[sym] = close;
+  // 1. trading-service /api/trading/prices 한방에 모두 조회 (DB 최신 종가)
+  try {
+    const symParam = symbols.join(',');
+    const priceRes = await fetch(
+      `${TRADING_SERVICE_URL}/api/trading/prices?symbols=${encodeURIComponent(symParam)}`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (priceRes.ok) {
+      const priceData = await priceRes.json();
+      for (const [sym, price] of Object.entries(priceData)) {
+        if (typeof price === 'number' && price > 0) {
+          prices[sym] = price;
         }
       }
-    } catch { /* silent */ }
-  }
+    }
+  } catch { /* silent */ }
 
-  // 2. KIS 보유종목 현재가 (장중이면 우선)
+  // 2. KIS 보유종목 현재가 (장중이면 더 정확) - 우선순위 높음
   try {
     const balRes = await fetch(`${TRADING_SERVICE_URL}/api/trading/balance`, {
       signal: AbortSignal.timeout(5000),
@@ -36,11 +36,32 @@ async function getLatestPrices(symbols: string[]): Promise<Record<string, number
       const balData = await balRes.json();
       for (const h of balData.holdings || []) {
         if (h.current_price > 0) {
-          prices[h.code] = h.current_price;
+          prices[h.code] = h.current_price;  // KIS 우선
         }
       }
     }
   } catch { /* silent */ }
+
+  // 3. 누락된 종목은 ML service DB에서 직접 조회 (fallback)
+  const missing = symbols.filter(s => !(s in prices));
+  if (missing.length > 0) {
+    await Promise.all(missing.map(async sym => {
+      try {
+        const res = await fetch(
+          `${ML_SERVICE_URL}/api/db/tables/${sym}_D/data?db_name=etf2_db&limit=1&offset=0`,
+          { signal: AbortSignal.timeout(3000) }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const rows = data.rows || [];
+          if (rows.length > 0) {
+            const close = parseFloat(rows[0].close || '0');
+            if (close > 0) prices[sym] = close;
+          }
+        }
+      } catch { /* silent */ }
+    }));
+  }
 
   return prices;
 }

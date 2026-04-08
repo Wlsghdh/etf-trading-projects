@@ -48,12 +48,12 @@ export function HoldingsTable({ holdings }: HoldingsTableProps) {
                   {holding.etfCode}
                 </TableCell>
                 <TableCell className="font-medium">{holding.etfName}</TableCell>
-                <TableCell className="text-right">{holding.quantity}</TableCell>
-                <TableCell className="text-right">
-                  {holding.buyPrice.toLocaleString()}
+                <TableCell className="text-right font-mono">{holding.quantity}</TableCell>
+                <TableCell className="text-right font-mono">
+                  ${holding.buyPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </TableCell>
-                <TableCell className="text-right">
-                  {holding.currentPrice.toLocaleString()}
+                <TableCell className="text-right font-mono">
+                  ${holding.currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </TableCell>
                 <TableCell>{holding.buyDate}</TableCell>
                 <TableCell className="text-right">
@@ -63,15 +63,14 @@ export function HoldingsTable({ holdings }: HoldingsTableProps) {
                 </TableCell>
                 <TableCell className="text-right">
                   <span
-                    className={`font-medium ${
+                    className={`font-medium font-mono ${
                       isPositive ? 'text-green-500' : 'text-red-500'
                     }`}
                   >
-                    {isPositive ? '+' : ''}
-                    {holding.profitLoss.toLocaleString()}원
+                    {isPositive ? '+' : ''}${holding.profitLoss.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     <span className="ml-1 text-xs">
                       ({isPositive ? '+' : ''}
-                      {holding.profitLossPercent}%)
+                      {holding.profitLossPercent.toFixed(2)}%)
                     </span>
                   </span>
                 </TableCell>

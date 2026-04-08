@@ -3,6 +3,9 @@ import { promises as fs } from 'fs';
 import path from 'path';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
+// 이미지 업로드 위해 body 크기 제한 늘림 (10MB)
+export const runtime = 'nodejs';
 
 // Docker 볼륨 마운트 경로 또는 로컬 경로
 const DATA_DIR = process.env.COMMUNITY_DATA_DIR || path.join(process.cwd(), 'data');

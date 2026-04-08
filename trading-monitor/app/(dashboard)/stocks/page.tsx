@@ -64,6 +64,13 @@ interface NewsItem {
 
 function TVTimeline() {
   const ref = useRef<HTMLDivElement>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // 1시간마다 위젯 강제 리로드 (Top Stories와 동기화)
+  useEffect(() => {
+    const iv = setInterval(() => setReloadKey(k => k + 1), 60 * 60 * 1000);
+    return () => clearInterval(iv);
+  }, []);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -95,13 +102,20 @@ function TVTimeline() {
     ref.current.appendChild(wrapper);
 
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, []);
+  }, [reloadKey]);
 
   return <div ref={ref} className="h-full w-full" />;
 }
 
 function TVHotlists() {
   const ref = useRef<HTMLDivElement>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // 1시간마다 위젯 강제 리로드
+  useEffect(() => {
+    const iv = setInterval(() => setReloadKey(k => k + 1), 60 * 60 * 1000);
+    return () => clearInterval(iv);
+  }, []);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -133,7 +147,7 @@ function TVHotlists() {
     ref.current.appendChild(wrapper);
 
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, []);
+  }, [reloadKey]);
 
   return <div ref={ref} className="h-full w-full" />;
 }
@@ -216,6 +230,205 @@ function TVSymbolInfo({ symbol }: { symbol: string }) {
   }, [symbol]);
 
   return <div ref={ref} className="w-full" />;
+}
+
+// ── 시장 개요 (Market Overview) ──
+function TVMarketOverview() {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.innerHTML = '';
+
+    const script = document.createElement('script');
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-market-overview.js';
+    script.type = 'text/javascript';
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      colorTheme: 'dark',
+      dateRange: '1D',
+      showChart: true,
+      locale: 'en',
+      largeChartUrl: '',
+      isTransparent: true,
+      showSymbolLogo: true,
+      showFloatingTooltip: false,
+      width: '100%',
+      height: '100%',
+      plotLineColorGrowing: 'rgba(41, 98, 255, 1)',
+      plotLineColorFalling: 'rgba(41, 98, 255, 1)',
+      gridLineColor: 'rgba(240, 243, 250, 0)',
+      scaleFontColor: 'rgba(209, 212, 220, 1)',
+      belowLineFillColorGrowing: 'rgba(41, 98, 255, 0.12)',
+      belowLineFillColorFalling: 'rgba(41, 98, 255, 0.12)',
+      belowLineFillColorGrowingBottom: 'rgba(41, 98, 255, 0)',
+      belowLineFillColorFallingBottom: 'rgba(41, 98, 255, 0)',
+      symbolActiveColor: 'rgba(41, 98, 255, 0.12)',
+      tabs: [
+        {
+          title: 'Indices',
+          symbols: [
+            { s: 'FOREXCOM:SPXUSD', d: 'S&P 500' },
+            { s: 'FOREXCOM:NSXUSD', d: 'Nasdaq 100' },
+            { s: 'FOREXCOM:DJI', d: 'Dow 30' },
+            { s: 'INDEX:NKY', d: 'Nikkei 225' },
+            { s: 'INDEX:DEU40', d: 'DAX' },
+          ],
+          originalTitle: 'Indices',
+        },
+        {
+          title: 'Futures',
+          symbols: [
+            { s: 'CME_MINI:ES1!', d: 'S&P 500' },
+            { s: 'CME:6E1!', d: 'Euro' },
+            { s: 'COMEX:GC1!', d: 'Gold' },
+            { s: 'NYMEX:CL1!', d: 'Crude Oil' },
+            { s: 'NYMEX:NG1!', d: 'Natural Gas' },
+          ],
+          originalTitle: 'Futures',
+        },
+      ],
+    });
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tradingview-widget-container';
+    wrapper.style.height = '100%';
+    const inner = document.createElement('div');
+    inner.className = 'tradingview-widget-container__widget';
+    inner.style.height = '100%';
+    wrapper.appendChild(inner);
+    wrapper.appendChild(script);
+    ref.current.appendChild(wrapper);
+
+    return () => { if (ref.current) ref.current.innerHTML = ''; };
+  }, []);
+
+  return <div ref={ref} className="h-full w-full" />;
+}
+
+// ── 종목 스크리너 ──
+function TVScreener() {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.innerHTML = '';
+
+    const script = document.createElement('script');
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-screener.js';
+    script.type = 'text/javascript';
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      width: '100%',
+      height: '100%',
+      defaultColumn: 'overview',
+      defaultScreen: 'most_capitalized',
+      market: 'america',
+      showToolbar: true,
+      colorTheme: 'dark',
+      locale: 'en',
+      isTransparent: true,
+    });
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tradingview-widget-container';
+    wrapper.style.height = '100%';
+    const inner = document.createElement('div');
+    inner.className = 'tradingview-widget-container__widget';
+    inner.style.height = '100%';
+    wrapper.appendChild(inner);
+    wrapper.appendChild(script);
+    ref.current.appendChild(wrapper);
+
+    return () => { if (ref.current) ref.current.innerHTML = ''; };
+  }, []);
+
+  return <div ref={ref} className="h-full w-full" />;
+}
+
+// ── 티커 띠 (Ticker Tape) ──
+function TVTickerTape() {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.innerHTML = '';
+
+    const script = document.createElement('script');
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js';
+    script.type = 'text/javascript';
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      symbols: [
+        { proName: 'FOREXCOM:SPXUSD', title: 'S&P 500' },
+        { proName: 'FOREXCOM:NSXUSD', title: 'Nasdaq 100' },
+        { proName: 'FX_IDC:EURUSD', title: 'EUR/USD' },
+        { proName: 'BITSTAMP:BTCUSD', title: 'BTC/USD' },
+        { proName: 'NASDAQ:AAPL', title: 'Apple' },
+        { proName: 'NASDAQ:NVDA', title: 'NVIDIA' },
+        { proName: 'NASDAQ:TSLA', title: 'Tesla' },
+        { proName: 'NASDAQ:MSFT', title: 'Microsoft' },
+        { proName: 'NASDAQ:GOOGL', title: 'Google' },
+        { proName: 'AMEX:SPY', title: 'S&P 500 ETF' },
+        { proName: 'NASDAQ:QQQ', title: 'Nasdaq ETF' },
+      ],
+      showSymbolLogo: true,
+      isTransparent: true,
+      displayMode: 'adaptive',
+      colorTheme: 'dark',
+      locale: 'en',
+    });
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tradingview-widget-container';
+    const inner = document.createElement('div');
+    inner.className = 'tradingview-widget-container__widget';
+    wrapper.appendChild(inner);
+    wrapper.appendChild(script);
+    ref.current.appendChild(wrapper);
+
+    return () => { if (ref.current) ref.current.innerHTML = ''; };
+  }, []);
+
+  return <div ref={ref} className="w-full" />;
+}
+
+// ── 경제 캘린더 (Events) ──
+function TVEvents() {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.innerHTML = '';
+
+    const script = document.createElement('script');
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-events.js';
+    script.type = 'text/javascript';
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      colorTheme: 'dark',
+      isTransparent: true,
+      width: '100%',
+      height: '100%',
+      locale: 'en',
+      importanceFilter: '-1,0,1',
+      countryFilter: 'us,kr,jp,cn,eu',
+    });
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tradingview-widget-container';
+    wrapper.style.height = '100%';
+    const inner = document.createElement('div');
+    inner.className = 'tradingview-widget-container__widget';
+    inner.style.height = '100%';
+    wrapper.appendChild(inner);
+    wrapper.appendChild(script);
+    ref.current.appendChild(wrapper);
+
+    return () => { if (ref.current) ref.current.innerHTML = ''; };
+  }, []);
+
+  return <div ref={ref} className="h-full w-full" />;
 }
 
 // ── 뉴스 카드 (Good/Bad 투표) ──
@@ -400,7 +613,14 @@ function NewsPanel({ symbol, user }: { symbol?: string; user: string }) {
     return (
       <div className="space-y-3">
         {[...Array(5)].map((_, i) => (
-          <div key={i} className="h-20 animate-pulse rounded-lg bg-muted" />
+          <div key={i} className="relative h-20 overflow-hidden rounded-lg border border-border/40 bg-muted/20">
+            <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/5 to-transparent" />
+            <div className="space-y-2 p-3">
+              <div className="h-2.5 w-3/4 rounded bg-muted-foreground/20" />
+              <div className="h-2 w-full rounded bg-muted-foreground/15" />
+              <div className="h-2 w-1/2 rounded bg-muted-foreground/15" />
+            </div>
+          </div>
         ))}
       </div>
     );
@@ -423,6 +643,8 @@ function NewsPanel({ symbol, user }: { symbol?: string; user: string }) {
   );
 }
 
+type SideTab = 'news' | 'overview' | 'screener' | 'events';
+
 // ── 메인 ──
 export default function StocksPage() {
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -430,6 +652,7 @@ export default function StocksPage() {
   const [activeSymbol, setActiveSymbol] = useState<string | null>(null);
   const [showFavorites, setShowFavorites] = useState(false);
   const [user, setUser] = useState('User');
+  const [sideTab, setSideTab] = useState<SideTab>('news');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -514,7 +737,12 @@ export default function StocksPage() {
 
   // ── 메인 (검색 + 뉴스) ──
   return (
-    <div className="flex h-[calc(100vh-7rem)] flex-col gap-4">
+    <div className="flex h-[calc(100vh-7rem)] flex-col gap-3">
+      {/* 티커 띠 (스크롤되는 시장 가격) */}
+      <div className="shrink-0 rounded-lg overflow-hidden border border-border">
+        <TVTickerTape />
+      </div>
+
       {/* 검색 바 */}
       <div className="flex items-center gap-3">
         <h1 className="text-lg font-semibold">종목 열람</h1>
@@ -607,21 +835,43 @@ export default function StocksPage() {
 
         {/* TradingView 뉴스 타임라인 */}
         <Card size="sm" className="flex-1 min-h-0 hidden lg:flex lg:flex-col">
-          <CardHeader className="border-b">
-            <CardTitle className="text-sm">실시간 마켓 뉴스</CardTitle>
+          <CardHeader className="border-b py-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              실시간 마켓 뉴스
+              <Badge variant="outline" className="text-[10px]">1h 갱신</Badge>
+            </CardTitle>
           </CardHeader>
           <CardContent className="h-[calc(100%-3rem)] p-0">
             <TVTimeline />
           </CardContent>
         </Card>
 
-        {/* 인기 종목 */}
-        <Card size="sm" className="w-72 shrink-0 min-h-0 hidden xl:flex xl:flex-col">
-          <CardHeader className="border-b">
-            <CardTitle className="text-sm">인기 종목</CardTitle>
+        {/* 우측 - 탭 전환 (인기종목/시장개요/스크리너/캘린더) */}
+        <Card size="sm" className="w-80 shrink-0 min-h-0 hidden xl:flex xl:flex-col">
+          <CardHeader className="border-b py-2 px-3">
+            <div className="flex items-center gap-1">
+              {[
+                { id: 'news' as SideTab, label: '인기' },
+                { id: 'overview' as SideTab, label: '시장' },
+                { id: 'screener' as SideTab, label: '스크리너' },
+                { id: 'events' as SideTab, label: '캘린더' },
+              ].map(tab => (
+                <button key={tab.id} onClick={() => setSideTab(tab.id)}
+                  className={`px-2 py-1 text-[11px] rounded transition-colors ${
+                    sideTab === tab.id
+                      ? 'bg-primary text-primary-foreground font-medium'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </CardHeader>
           <CardContent className="h-[calc(100%-3rem)] p-0">
-            <TVHotlists />
+            {sideTab === 'news' && <TVHotlists />}
+            {sideTab === 'overview' && <TVMarketOverview />}
+            {sideTab === 'screener' && <TVScreener />}
+            {sideTab === 'events' && <TVEvents />}
           </CardContent>
         </Card>
       </div>

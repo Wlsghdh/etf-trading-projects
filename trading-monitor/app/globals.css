@@ -5,6 +5,13 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Shimmer 애니메이션 (로딩 스켈레톤용) */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

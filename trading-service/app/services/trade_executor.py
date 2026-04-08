@@ -107,9 +107,66 @@ def _get_previous_close_prices(symbols: list[str]) -> dict[str, float]:
     return prices
 
 
+async def _check_pending_order_status(db: Session, cycle_id: int, kis) -> tuple[int, int]:
+    """
+    PENDING 주문의 KIS 체결 상태를 조회하여 SUCCESS/UNFILLED로 업데이트.
+
+    Returns:
+        (filled_count, unfilled_count)
+    """
+    pending_orders = db.query(OrderLog).filter(
+        OrderLog.cycle_id == cycle_id,
+        OrderLog.status == "PENDING",
+        OrderLog.order_type.in_(["BUY", "BUY_FIXED"]),
+        OrderLog.order_id.isnot(None),
+    ).all()
+
+    filled = 0
+    unfilled = 0
+
+    for order in pending_orders:
+        try:
+            # KIS 체결조회 API 호출
+            status_data = await kis.get_order_status(order.order_id)
+            output1 = status_data.get("output1", []) if isinstance(status_data, dict) else []
+
+            # 체결 여부 확인 (실제 체결 수량 > 0)
+            executed = False
+            executed_price = 0.0
+            for item in output1:
+                if item.get("odno") == order.order_id:
+                    ccld_qty = float(item.get("ccld_qty", 0))  # 체결 수량
+                    if ccld_qty > 0:
+                        executed = True
+                        # 평균 체결가
+                        executed_price = float(item.get("avg_prvs", 0)) or float(item.get("ft_ccld_unpr3", 0))
+                        break
+
+            if executed:
+                order.status = "SUCCESS"
+                if executed_price > 0:
+                    order.price = executed_price
+                logger.info(f"지정가 체결 확인: {order.etf_code} {order.quantity}주 @ ${executed_price:.2f}")
+                filled += 1
+            else:
+                # 미체결 (체결 수량 0)
+                pass  # _get_unfilled_carryover에서 UNFILLED로 처리
+        except Exception as e:
+            logger.warning(f"체결 조회 실패 {order.etf_code} (order_id={order.order_id}): {e}")
+
+    if filled > 0:
+        db.commit()
+        logger.info(f"체결 확인 완료: {filled}건 체결됨, {len(pending_orders) - filled}건 미체결")
+
+    return filled, len(pending_orders) - filled
+
+
 def _get_unfilled_carryover(db: Session, cycle_id: int, today: date) -> float:
-    """전일 미체결 주문의 이월 금액 계산 및 상태 업데이트"""
-    # 오늘 이전의 PENDING 상태 주문 조회 (지정가 미체결)
+    """전일 미체결 주문의 이월 금액 계산 및 상태 업데이트.
+
+    PENDING 상태로 남아있는 주문(_check_pending_order_status에서 SUCCESS로 전환되지 않은 주문)을
+    UNFILLED로 표시하고 그 금액을 다음날 예산에 이월한다.
+    """
     pending_orders = db.query(OrderLog).filter(
         OrderLog.cycle_id == cycle_id,
         OrderLog.status == "PENDING",
@@ -459,9 +516,18 @@ async def execute_daily_trading(db: Session = None) -> dict:
             logger.info(f"매도 완료: {sold_count}건, 총 ${sold_total:,.2f}")
             _write_trading_log(db, "INFO", f"FIFO 매도 완료: {sold_count}건, ${sold_total:,.2f}")
 
-        # 6. 미체결 이월 처리 (지정가 모드)
+        # 6. PENDING 주문 체결 조회 + 미체결 이월 처리 (지정가 모드)
         carryover = 0.0
         if settings.order_type == "limit":
+            # 6-1. KIS 체결조회로 PENDING → SUCCESS 전환 시도
+            try:
+                filled, unfilled = await _check_pending_order_status(db, cycle.id, kis)
+                if filled > 0 or unfilled > 0:
+                    _write_trading_log(db, "INFO", f"체결 확인: {filled}건 체결, {unfilled}건 미체결")
+            except Exception as e:
+                logger.warning(f"체결 조회 실패: {e}")
+
+            # 6-2. 여전히 PENDING인 주문 → UNFILLED + 금액 이월
             carryover = _get_unfilled_carryover(db, cycle.id, today)
             if carryover > 0:
                 logger.info(f"전일 미체결 이월 금액: ${carryover:,.2f}")

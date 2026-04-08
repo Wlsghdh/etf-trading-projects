@@ -31,13 +31,29 @@ def get_tables(
                 count_result = db.execute(text(f"SELECT COUNT(*) FROM `{name}`"))
                 row_count = count_result.scalar()
 
-                # 최신/최초 날짜
-                date_result = db.execute(
-                    text(f"SELECT MIN(time), MAX(time) FROM `{name}`")
-                )
-                row = date_result.fetchone()
-                oldest = str(row[0]) if row and row[0] else None
-                latest = str(row[1]) if row and row[1] else None
+                # 컬럼 확인 (time 컬럼이 있는 테이블만 날짜 조회)
+                col_check = db.execute(text(f"SHOW COLUMNS FROM `{name}` LIKE 'time'"))
+                has_time_col = col_check.fetchone() is not None
+
+                oldest = None
+                latest = None
+                is_up_to_date = False
+
+                if has_time_col:
+                    # 최신/최초 날짜
+                    date_result = db.execute(
+                        text(f"SELECT MIN(time), MAX(time) FROM `{name}`")
+                    )
+                    row = date_result.fetchone()
+                    oldest = str(row[0]) if row and row[0] else None
+                    latest = str(row[1]) if row and row[1] else None
+
+                    # 최신 여부 (5일 이내 - 주말 고려)
+                    if latest:
+                        check = db.execute(
+                            text(f"SELECT MAX(time) >= DATE_SUB(NOW(), INTERVAL 5 DAY) FROM `{name}`")
+                        )
+                        is_up_to_date = bool(check.scalar())
 
                 # 심볼/타임프레임 파싱
                 parts = name.rsplit("_", 1)
@@ -45,14 +61,6 @@ def get_tables(
                     symbol, timeframe = parts
                 else:
                     symbol, timeframe = name, ""
-
-                # 최신 여부 (5일 이내 - 주말 고려)
-                is_up_to_date = False
-                if latest:
-                    check = db.execute(
-                        text(f"SELECT MAX(time) >= DATE_SUB(NOW(), INTERVAL 5 DAY) FROM `{name}`")
-                    )
-                    is_up_to_date = bool(check.scalar())
 
                 tables.append({
                     "tableName": name,
@@ -108,12 +116,21 @@ def get_table_data(
         # 컬럼 정보
         cols_result = db.execute(text(f"DESCRIBE `{table_name}`"))
         columns = [{"name": row[0], "type": row[1]} for row in cols_result]
+        col_names_list = [c["name"] for c in columns]
 
-        # 데이터 (최신순)
-        data_result = db.execute(
-            text(f"SELECT * FROM `{table_name}` ORDER BY time DESC LIMIT :limit OFFSET :offset"),
-            {"limit": limit, "offset": offset},
-        )
+        # ORDER BY 컬럼 결정 (time > created_at > id 순)
+        order_col = None
+        for candidate in ["time", "created_at", "id"]:
+            if candidate in col_names_list:
+                order_col = candidate
+                break
+
+        # 데이터 (최신순 또는 그냥 SELECT)
+        if order_col:
+            sql = f"SELECT * FROM `{table_name}` ORDER BY `{order_col}` DESC LIMIT :limit OFFSET :offset"
+        else:
+            sql = f"SELECT * FROM `{table_name}` LIMIT :limit OFFSET :offset"
+        data_result = db.execute(text(sql), {"limit": limit, "offset": offset})
         col_names = data_result.keys()
         rows = [dict(zip(col_names, [str(v) if v is not None else None for v in row])) for row in data_result]
 

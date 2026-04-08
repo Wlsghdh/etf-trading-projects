@@ -284,12 +284,21 @@ function AICell({ text, aiId, loading }: { text: string; aiId: string; loading: 
   const col = AI_COLS.find(c => c.id === aiId)!;
   if (loading) {
     return (
-      <div className={`rounded-lg border ${col.borderColor} ${col.bgColor} p-3 h-full`}>
-        <div className="flex gap-1 py-6 justify-center">
-          {[0, 150, 300].map(d => (
-            <div key={d} className={`h-2 w-2 animate-bounce rounded-full ${col.dotColor}/50`} style={{ animationDelay: `${d}ms` }} />
-          ))}
+      <div className={`rounded-lg border ${col.borderColor} ${col.bgColor} p-3 h-full relative overflow-hidden`}>
+        {/* Shimmer 효과 */}
+        <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/5 to-transparent" />
+        <div className="space-y-2">
+          <div className="h-2 w-3/4 rounded bg-muted/40 animate-pulse" />
+          <div className="h-2 w-full rounded bg-muted/40 animate-pulse" style={{ animationDelay: '100ms' }} />
+          <div className="h-2 w-5/6 rounded bg-muted/40 animate-pulse" style={{ animationDelay: '200ms' }} />
+          <div className="h-2 w-2/3 rounded bg-muted/40 animate-pulse" style={{ animationDelay: '300ms' }} />
         </div>
+        <div className="mt-3 flex items-center justify-center gap-1.5">
+          <div className={`h-1.5 w-1.5 animate-bounce rounded-full ${col.dotColor}`} style={{ animationDelay: '0ms' }} />
+          <div className={`h-1.5 w-1.5 animate-bounce rounded-full ${col.dotColor}`} style={{ animationDelay: '150ms' }} />
+          <div className={`h-1.5 w-1.5 animate-bounce rounded-full ${col.dotColor}`} style={{ animationDelay: '300ms' }} />
+        </div>
+        <p className={`text-center text-[10px] mt-1 ${col.color} font-medium`}>분석 중...</p>
       </div>
     );
   }
@@ -434,30 +443,84 @@ export default function MultiAIPage() {
       } catch {}
     }
 
-    // 2단계: 실제 AI API 호출 (3개 병렬, 결과가 오면 덮어쓰기)
-    const contextParts: string[] = [];
-    if (analysis) {
-      contextParts.push(`종목: ${sym}, 현재가: $${analysis.currentPrice.toFixed(2)}`);
-      if (analysis.rank) contextParts.push(`ML 순위: ${analysis.rank}/${analysis.totalSymbols} (${analysis.direction})`);
-      if (analysis.rsi) contextParts.push(`RSI: ${analysis.rsi.toFixed(1)}, MACD: ${analysis.macd?.toFixed(4)}`);
-      contextParts.push(`1일: ${pf(analysis.priceChange1d)}%, 5일: ${pf(analysis.priceChange5d)}%, 20일: ${pf(analysis.priceChange20d)}%`);
-      if (analysis.holdingQty) contextParts.push(`보유: ${analysis.holdingQty}주, 평균매수가: $${analysis.avgBuyPrice?.toFixed(2)}`);
-      if (ragEnabled) contextParts.push('RAG 모드: ML 예측 근거를 상세히 분석해주세요.');
+    // 2단계: 실제 AI API 호출 - 카테고리별로 다른 컨텍스트 + 명확한 프롬프트
+    const baseInfo = analysis ? `종목: ${sym}\n현재가: $${analysis.currentPrice.toFixed(2)}` : `종목: ${sym}`;
+
+    // 카테고리별 데이터 컨텍스트 (각각 다른 데이터만 보내서 답이 섞이지 않게)
+    const mlContext = analysis ? [
+      baseInfo,
+      analysis.rank ? `ML 모델 순위: ${analysis.rank}위 / ${analysis.totalSymbols}개` : '',
+      analysis.direction ? `예측 방향: ${analysis.direction}` : '',
+      analysis.score !== null ? `모델 스코어: ${analysis.score?.toFixed(4)}` : '',
+      analysis.weight !== null ? `가중치: ${analysis.weight! > 0 ? '+' : ''}${analysis.weight?.toFixed(3)}` : '',
+      analysis.modelName ? `모델: ${analysis.modelName} (LightGBM LambdaRank, 85개 피처)` : '',
+      ragEnabled ? '\n[RAG 모드 활성화] ML 예측 근거를 상세히 분석해주세요.' : '',
+    ].filter(Boolean).join('\n') : baseInfo;
+
+    const fundContext = analysis ? [
+      baseInfo,
+      `52주 최고가: $${analysis.high52w.toFixed(2)}`,
+      `52주 최저가: $${analysis.low52w.toFixed(2)}`,
+      analysis.high52w > 0 ? `52주 고점 대비: ${((analysis.currentPrice / analysis.high52w - 1) * 100).toFixed(1)}%` : '',
+      analysis.low52w > 0 ? `52주 저점 대비: +${((analysis.currentPrice / analysis.low52w - 1) * 100).toFixed(1)}%` : '',
+      analysis.holdingQty ? `보유: ${analysis.holdingQty}주, 평균 매수가: $${analysis.avgBuyPrice?.toFixed(2)}, 손익률: ${analysis.pnlRate?.toFixed(2)}%` : '미보유 종목',
+      analysis.availableCash ? `투자 가능 현금: $${analysis.availableCash.toLocaleString(undefined,{maximumFractionDigits:0})}` : '',
+    ].filter(Boolean).join('\n') : baseInfo;
+
+    const marketContext = analysis ? [
+      baseInfo,
+      `1일 변동: ${pf(analysis.priceChange1d)}%`,
+      `5일 변동: ${pf(analysis.priceChange5d)}%`,
+      `20일 변동: ${pf(analysis.priceChange20d)}%`,
+      analysis.rsi !== null ? `RSI(14): ${analysis.rsi?.toFixed(1)}` : '',
+      analysis.macd !== null ? `MACD: ${analysis.macd?.toFixed(4)}` : '',
+      analysis.volume > 0 ? `거래량: ${(analysis.volume/1e6).toFixed(1)}M (20일 평균: ${(analysis.avgVolume/1e6).toFixed(1)}M)` : '',
+    ].filter(Boolean).join('\n') : baseInfo;
+
+    // 카테고리별 명확한 프롬프트 (각각 다른 답변 유도)
+    const userPrompt = userMessage || '';
+
+    const categoryPrompts = {
+      ml: `${sym} 종목에 대해 우리 ML 모델의 예측 결과만 분석해주세요.
+
+다음 항목을 포함해 답변하세요:
+1. **순위와 방향**: ${analysis?.rank}위/${analysis?.totalSymbols}개, ${analysis?.direction} 시그널이 의미하는 것
+2. **신뢰도 평가**: 가중치 ${analysis?.weight !== null && analysis?.weight !== undefined ? (analysis.weight > 0 ? '+' : '') + analysis.weight.toFixed(3) : 'N/A'}의 의미
+3. **투자 의견**: ML 예측 기반 매수/관망/매도 추천
+
+펀더멘털이나 기술적 분석은 언급하지 마세요. 3-4문장으로 간결히.${userPrompt ? '\n\n사용자 질문: ' + userPrompt : ''}`,
+
+      fundamental: `${sym} 종목의 펀더멘털만 분석해주세요.
+
+다음 항목을 포함해 답변하세요:
+1. **밸류에이션**: 52주 레인지 내 위치 (저평가/적정/고평가)
+2. **포지션 평가**: ${analysis?.holdingQty ? '보유 중' : '미보유'} 상태에서의 의견
+3. **진입/청산 시점**: 매수/매도 타이밍 의견
+
+기술적 지표(RSI, MACD)나 ML 예측은 언급하지 마세요. 3-4문장으로 간결히.${userPrompt ? '\n\n사용자 질문: ' + userPrompt : ''}`,
+
+      market: `${sym} 종목의 기술적 분석/시장 동향만 분석해주세요.
+
+다음 항목을 포함해 답변하세요:
+1. **추세**: 단기(1D)/중기(5D)/장기(20D) 가격 흐름
+2. **모멘텀**: RSI ${analysis?.rsi?.toFixed(0) || 'N/A'} / MACD ${analysis?.macd?.toFixed(3) || 'N/A'}가 보내는 신호 (과매수/과매도/중립)
+3. **단기 전망**: 차트 패턴 기반 단기 의견
+
+펀더멘털이나 ML 예측은 언급하지 마세요. 3-4문장으로 간결히.${userPrompt ? '\n\n사용자 질문: ' + userPrompt : ''}`,
+    };
+
+    const cells: { ai: 'chatgpt' | 'gemini' | 'claude'; key: 'ml' | 'fundamental' | 'market'; ctx: string; prompt: string }[] = [];
+    for (const ai of ['chatgpt', 'gemini', 'claude'] as const) {
+      cells.push({ ai, key: 'ml', ctx: mlContext, prompt: categoryPrompts.ml });
+      cells.push({ ai, key: 'fundamental', ctx: fundContext, prompt: categoryPrompts.fundamental });
+      cells.push({ ai, key: 'market', ctx: marketContext, prompt: categoryPrompts.market });
     }
-    const context = contextParts.join('\n');
-    const prompt = userMessage || `${sym} 종합 분석해줘`;
 
-    const categories = ['ML 예측 관점에서 분석해줘', '펀더멘털 관점에서 분석해줘', '시장 동향/기술적 분석 관점에서 분석해줘'];
-    const keys: ('ml' | 'fundamental' | 'market')[] = ['ml', 'fundamental', 'market'];
-
-    // 3 AI x 3 카테고리 = 9개 병렬 호출
-    const aiIds = ['chatgpt', 'gemini', 'claude'] as const;
-    const promises = aiIds.flatMap(ai =>
-      categories.map((cat, ci) =>
-        callAI(ai, `${prompt}\n\n${cat}`, sym, context, userId, sessionId)
-          .then(resp => ({ ai, key: keys[ci], resp }))
-          .catch(() => ({ ai, key: keys[ci], resp: '응답 실패' }))
-      )
+    // 각 셀마다 고유한 cellSessionId (히스토리 안 섞임)
+    const promises = cells.map(({ ai, key, ctx, prompt }) =>
+      callAI(ai, prompt, sym, ctx, userId, `${sessionId}-${ai}-${key}`)
+        .then(resp => ({ ai, key, resp }))
+        .catch(() => ({ ai, key, resp: '응답 실패' }))
     );
 
     // 결과가 하나씩 올 때마다 그리드 업데이트

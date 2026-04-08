@@ -27,6 +27,7 @@ RUN playwright install chromium
 COPY app/ ./app/
 COPY scripts/ ./scripts/
 COPY tests/ ./tests/
+COPY config/ ./config/
 
 RUN mkdir -p /app/logs /app/downloads
 

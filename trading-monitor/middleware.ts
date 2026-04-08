@@ -16,12 +16,13 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const path = pathname.replace(/^\/trading/, '') || '/';
 
-  // 로그인/회원가입 + 정적 리소스 제외
+  // 로그인/회원가입 + 정적 리소스 + 헬스체크 제외
   if (
     path === '/login' ||
     path === '/api/auth/login' ||
     path === '/api/auth/logout' ||
     path === '/api/auth/register' ||
+    path === '/api/health' ||
     path.startsWith('/_next/') ||
     path === '/favicon.ico'
   ) {

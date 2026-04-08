@@ -4,11 +4,11 @@ from pathlib import Path
 
 
 class Settings(BaseSettings):
-    # Remote MySQL (via SSH tunnel)
-    remote_db_url: str = "mysql+pymysql://ahnbi2:bigdata@host.docker.internal:3306/etf2_db"
+    # Remote MySQL (via SSH tunnel) - 172.17.0.1 = Docker bridge IP (Linux)
+    remote_db_url: str = "mysql+pymysql://ahnbi2:bigdata@172.17.0.1:3306/etf2_db"
 
     # Processed features DB
-    processed_db_url: str = "mysql+pymysql://ahnbi2:bigdata@host.docker.internal:3306/etf2_db_processed"
+    processed_db_url: str = "mysql+pymysql://ahnbi2:bigdata@172.17.0.1:3306/etf2_db_processed"
 
     # Local SQLite for predictions
     local_db_path: str = "/app/data/predictions.db"
