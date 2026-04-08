@@ -24,6 +24,7 @@ from app.config import settings
 from app.services.db_service import DatabaseService
 from app.services.db_log_handler import write_log, SyncDBLogHandler
 from app.models.task_info import task_info_manager, JobStatus, SymbolStatus, TimeframeStatus
+from config.symbol_loader import STOCK_LIST, NYSE_SYMBOLS, SECTOR_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,42 @@ def _detach_db_handler():
         logging.getLogger().removeHandler(_sync_handler)
         _sync_handler = None
 
+# 체크포인트 파일 경로
+CHECKPOINT_FILE = Path(settings.log_dir if hasattr(settings, 'log_dir') else "/app/logs") / "scrape_checkpoint.json"
+
+
+def _load_checkpoint() -> dict:
+    """체크포인트 파일을 로드한다. 없으면 빈 딕셔너리 반환."""
+    if CHECKPOINT_FILE.exists():
+        try:
+            with open(CHECKPOINT_FILE, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return {}
+    return {}
+
+
+def _save_checkpoint(completed_symbols: list, failed_symbols: list, job_id: str):
+    """현재까지 완료/실패한 종목을 체크포인트 파일에 저장한다."""
+    CHECKPOINT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "job_id": job_id,
+        "completed_symbols": completed_symbols,
+        "failed_symbols": failed_symbols,
+        "last_updated": datetime.now().isoformat(),
+        "total_completed": len(completed_symbols),
+        "total_failed": len(failed_symbols),
+    }
+    with open(CHECKPOINT_FILE, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def _clear_checkpoint():
+    """체크포인트 파일을 삭제한다 (전체 완료 시)."""
+    if CHECKPOINT_FILE.exists():
+        CHECKPOINT_FILE.unlink()
+
+
 # 설정 (기존 코드와 동일)
 TIME_PERIODS = [
     {"name": "12달", "button_text": "1Y", "interval": "1 날"},
@@ -62,57 +99,8 @@ TIME_PERIODS = [
     {"name": "1일", "button_text": "1D", "interval": "1 분"},
 ]
 
-# 종목 리스트 (etf2_db 테이블 기준 - 101개 종목)
-STOCK_LIST = [
-    # Technology (30개)
-    "AAPL", "MSFT", "NVDA", "GOOGL", "GOOG", "META", "AVGO", "ADBE",
-    "CRM", "CSCO", "ORCL", "AMD", "INTC", "QCOM", "TXN", "NOW",
-    "INTU", "AMAT", "ADI", "LRCX", "KLAC", "MU", "PANW", "CRWD",
-    "ANET", "PLTR", "APP", "IBM", "HOOD", "IBKR",
-    # Communication Services (4개)
-    "AMZN", "TSLA", "NFLX", "T",
-    # Consumer (9개)
-    "WMT", "HD", "COST", "MCD", "LOW", "TJX", "BKNG", "PEP", "KO",
-    # Financials (15개)
-    "BRK.B", "JPM", "V", "MA", "BAC", "WFC", "GS", "MS", "BLK",
-    "SCHW", "AXP", "C", "SPGI", "COF", "BX",
-    # Healthcare (14개)
-    "UNH", "JNJ", "LLY", "ABBV", "MRK", "PFE", "TMO", "ABT",
-    "DHR", "AMGN", "ISRG", "GILD", "BSX", "SYK",
-    # Industrials (12개)
-    "CAT", "GE", "HON", "UNP", "BA", "RTX", "LMT", "DE",
-    "ETN", "PLD", "MDT", "MMM",
-    # Energy (3개)
-    "XOM", "CVX", "COP",
-    # Consumer Staples (3개)
-    "PG", "PM", "LIN",
-    # Utilities & Others (11개)
-    "NEE", "CEG", "DIS", "VZ", "TMUS", "UBER", "GEV", "PGR",
-    "WELL", "APH", "ACN",
-]
-
-# 거래소 매핑 (NYSE 종목만 명시, 나머지는 NASDAQ)
-NYSE_SYMBOLS = {
-    # Financials
-    "BRK.B", "JPM", "V", "MA", "BAC", "WFC", "GS", "MS", "BLK",
-    "SCHW", "AXP", "C", "SPGI", "COF", "BX", "ANET",
-    # Healthcare
-    "UNH", "JNJ", "LLY", "ABBV", "MRK", "TMO", "ABT",
-    "DHR", "GILD", "BSX", "SYK", "PFE",
-    # Industrials
-    "CAT", "GE", "HON", "UNP", "BA", "RTX", "LMT", "DE",
-    "ETN", "PLD", "MDT", "MMM",
-    # Energy
-    "XOM", "CVX", "COP",
-    # Consumer Staples
-    "PG", "PM", "LIN",
-    # Consumer
-    "HD", "MCD", "LOW", "TJX", "KO",
-    # Communication/Utilities
-    "T", "VZ", "DIS", "NEE",
-    # Others
-    "IBM", "ORCL", "CRM", "NOW", "ACN", "PGR", "APH", "WELL", "GEV"
-}
+# 종목 리스트 및 거래소 매핑은 config/symbols.yaml에서 로드
+# STOCK_LIST, NYSE_SYMBOLS, SECTOR_MAP은 상단 import에서 가져옴
 
 def get_exchange_prefix(symbol: str) -> str:
     """종목의 거래소 접두사 반환"""
@@ -224,70 +212,6 @@ class TradingViewScraper:
 
         await asyncio.sleep(3)  # 추가 로딩 대기
 
-        # 팝업/오버레이 닫기
-        await self.dismiss_overlays()
-
-    async def dismiss_overlays(self):
-        """TradingView 팝업, 오버레이, 다이얼로그를 모두 닫기"""
-        try:
-            # 1. overlap-manager-root 내부의 닫기 버튼 클릭
-            close_btns = self.page.locator(
-                '#overlap-manager-root button[aria-label="닫기"], '
-                '#overlap-manager-root button[aria-label="Close"], '
-                '#overlap-manager-root [class*="close"], '
-                '#overlap-manager-root [data-name="close"]'
-            )
-            count = await close_btns.count()
-            for i in range(count):
-                try:
-                    await close_btns.nth(i).click(timeout=1000)
-                    logger.info(f"오버레이 닫기 버튼 클릭 ({i+1}/{count})")
-                    await asyncio.sleep(0.5)
-                except:
-                    pass
-
-            # 2. 쿠키 동의 배너 닫기
-            cookie_btns = self.page.locator(
-                'button:has-text("동의"), '
-                'button:has-text("Accept"), '
-                'button:has-text("OK"), '
-                '[class*="cookie"] button'
-            )
-            count = await cookie_btns.count()
-            for i in range(count):
-                try:
-                    await cookie_btns.nth(i).click(timeout=1000)
-                    logger.info("쿠키 동의 버튼 클릭")
-                    await asyncio.sleep(0.5)
-                except:
-                    pass
-
-            # 3. ESC 키로 나머지 다이얼로그 닫기
-            await self.page.keyboard.press("Escape")
-            await asyncio.sleep(0.3)
-            await self.page.keyboard.press("Escape")
-            await asyncio.sleep(0.3)
-
-            # 4. JS로 overlay-manager-root 내부 컨테이너 직접 제거
-            removed = await self.page.evaluate("""
-                () => {
-                    const root = document.getElementById('overlap-manager-root');
-                    if (!root) return 0;
-                    const containers = root.querySelectorAll(':scope > div');
-                    let count = 0;
-                    containers.forEach(el => {
-                        el.style.display = 'none';
-                        count++;
-                    });
-                    return count;
-                }
-            """)
-            if removed > 0:
-                logger.info(f"오버레이 {removed}개 숨김 처리")
-
-        except Exception as e:
-            logger.debug(f"오버레이 닫기 중 오류 (무시): {e}")
-
     async def search_and_select_symbol(self, symbol: str) -> bool:
         """
         심볼 검색 및 선택 (거래소 접두사 사용)
@@ -303,9 +227,6 @@ class TradingViewScraper:
         logger.info(f"심볼 검색: {search_symbol}")
 
         try:
-            # 오버레이가 다시 나타났을 수 있으므로 먼저 닫기
-            await self.dismiss_overlays()
-
             # 상단 툴바의 심볼 검색 버튼 클릭 (고정 ID 사용)
             symbol_btn = self.page.locator("#header-toolbar-symbol-search")
             await symbol_btn.click(timeout=5000)
@@ -407,9 +328,6 @@ class TradingViewScraper:
             성공 여부
         """
         logger.info(f"시간 단위 변경: {button_text}")
-
-        # 오버레이 먼저 닫기
-        await self.dismiss_overlays()
 
         try:
             # 하단 툴바의 기간 버튼 클릭
@@ -636,13 +554,14 @@ class TradingViewScraper:
 
         return results
 
-    async def process_all_stocks(self, stock_list: List[str] = None, is_retry: bool = False) -> dict:
+    async def process_all_stocks(self, stock_list: List[str] = None, is_retry: bool = False, resume: bool = True) -> dict:
         """
-        모든 종목에 대해 데이터 수집 (기존 코드와 동일한 로직 + task_info 업데이트)
+        모든 종목에 대해 데이터 수집 (체크포인트/재개 기능 포함)
 
         Args:
             stock_list: 종목 리스트 (없으면 기본 STOCK_LIST 사용)
             is_retry: retry 모드인지 여부
+            resume: True면 이전 체크포인트에서 이어서 수집
 
         Returns:
             결과 딕셔너리 {symbol: {period_name: file_path}}
@@ -652,6 +571,19 @@ class TradingViewScraper:
 
         all_results = {}
         retry_id = None
+        completed_symbols = []
+        failed_symbols = []
+
+        # 체크포인트에서 이전 진행 상황 로드
+        skipped_count = 0
+        if resume and not is_retry:
+            checkpoint = _load_checkpoint()
+            if checkpoint.get("completed_symbols"):
+                prev_completed = set(checkpoint["completed_symbols"])
+                skipped_count = len(prev_completed)
+                completed_symbols = list(prev_completed)
+                logger.info(f"체크포인트 발견: {skipped_count}개 종목 이미 완료. 나머지부터 재개합니다.")
+                _db_log("INFO", f"체크포인트에서 재개: {skipped_count}개 이미 완료")
 
         if is_retry:
             # retry 모드: 기존 상태 유지하면서 특정 심볼만 재처리
@@ -673,9 +605,16 @@ class TradingViewScraper:
         # 차트 페이지로 이동 (한 번만!)
         await self.navigate_to_chart()
 
+        completed_set = set(completed_symbols)
+
         for i, symbol in enumerate(stock_list):
+            # 체크포인트: 이미 완료된 종목은 건너뛰기
+            if symbol in completed_set:
+                logger.info(f"[{i + 1}/{len(stock_list)}] {symbol} - 이미 완료, 건너뜀")
+                continue
+
             logger.info(f"\n{'=' * 50}")
-            logger.info(f"[{i + 1}/{len(stock_list)}] {symbol} 처리 중...")
+            logger.info(f"[{i + 1}/{len(stock_list)}] {symbol} 처리 중... (완료: {len(completed_symbols)}, 실패: {len(failed_symbols)})")
             logger.info("=" * 50)
             _db_log("INFO", f"[{i + 1}/{len(stock_list)}] {symbol} 처리 시작", symbol=symbol)
 
@@ -683,10 +622,24 @@ class TradingViewScraper:
             await task_info_manager.update_symbol_status(symbol, SymbolStatus.DOWNLOADING)
             await task_info_manager.set_current_symbol(symbol)
 
-            results = await self.process_single_stock(symbol)
-            all_results[symbol] = results
+            try:
+                results = await self.process_single_stock(symbol)
+                all_results[symbol] = results
 
-            # 심볼 상태는 _recalculate_symbol_status에서 자동으로 계산됨
+                # 결과에 따라 완료/실패 분류
+                if results:
+                    completed_symbols.append(symbol)
+                    completed_set.add(symbol)
+                else:
+                    failed_symbols.append(symbol)
+            except Exception as e:
+                logger.error(f"[{symbol}] 예외 발생: {e}")
+                _db_log("ERROR", f"예외 발생: {e}", symbol=symbol)
+                failed_symbols.append(symbol)
+
+            # 체크포인트 저장 (매 종목 완료 후)
+            if not is_retry:
+                _save_checkpoint(completed_symbols, failed_symbols, job_id)
 
             # Rate limiting
             await asyncio.sleep(2)
@@ -708,18 +661,40 @@ class TradingViewScraper:
             # full 모드
             if completed == len(job_info.symbols):
                 await task_info_manager.update_job_status(JobStatus.COMPLETED)
+                _clear_checkpoint()  # 전체 완료 시 체크포인트 삭제
             elif completed > 0:
                 await task_info_manager.update_job_status(JobStatus.PARTIAL)
             else:
                 await task_info_manager.update_job_status(JobStatus.ERROR)
 
         logger.info(f"\n{'=' * 50}")
-        logger.info(f"Job 완료: {completed}/{total} 성공")
+        logger.info(f"Job 완료: {completed}/{total} 성공, {len(failed_symbols)}개 실패")
+        if failed_symbols:
+            logger.info(f"실패 종목: {failed_symbols}")
         logger.info("=" * 50)
         _db_log("INFO", f"Job 완료: {completed}/{total} 성공", completed=completed, total=total)
         _detach_db_handler()
 
         return all_results
+
+    async def retry_failed(self) -> dict:
+        """체크포인트에서 실패한 종목만 재수집한다."""
+        checkpoint = _load_checkpoint()
+        if not checkpoint:
+            logger.info("체크포인트 파일이 없습니다. 재시도할 종목이 없습니다.")
+            return {}
+
+        completed_set = set(checkpoint.get("completed_symbols", []))
+        all_symbols = set(STOCK_LIST)
+        failed = list(all_symbols - completed_set)
+
+        if not failed:
+            logger.info("모든 종목이 이미 완료되었습니다.")
+            _clear_checkpoint()
+            return {}
+
+        logger.info(f"실패/미완료 종목 {len(failed)}개 재수집 시작")
+        return await self.process_all_stocks(stock_list=failed, is_retry=True, resume=False)
 
 
 # Global instance for API use

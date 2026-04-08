@@ -24,6 +24,7 @@ RUN poetry install --no-interaction --no-ansi --no-root --only main
 # Install Playwright browsers
 RUN playwright install chromium
 
+COPY config/ ./config/
 COPY app/ ./app/
 COPY scripts/ ./scripts/
 COPY tests/ ./tests/
