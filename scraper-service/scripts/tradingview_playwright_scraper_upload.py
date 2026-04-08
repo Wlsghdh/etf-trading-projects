@@ -38,11 +38,15 @@ import pandas as pd
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright, Browser, Page, BrowserContext
 
-# Add app/services to sys.path for yfinance_service import
+# Add app/services and project root to sys.path
 import sys
-_SERVICES_DIR = str(Path(__file__).resolve().parent.parent / "app" / "services")
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPT_DIR.parent  # scraper-service/
+_SERVICES_DIR = str(_PROJECT_ROOT / "app" / "services")
 if _SERVICES_DIR not in sys.path:
     sys.path.insert(0, _SERVICES_DIR)
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 try:
     from db_service_host import DatabaseService
@@ -78,6 +82,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 체크포인트 파일 경로
+CHECKPOINT_FILE = _LOG_DIR / "scrape_checkpoint.json"
+
+
+def _load_checkpoint() -> dict:
+    """체크포인트 파일을 로드한다."""
+    if CHECKPOINT_FILE.exists():
+        try:
+            with open(CHECKPOINT_FILE, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return {}
+    return {}
+
+
+def _save_checkpoint(completed_symbols: list, failed_symbols: list):
+    """현재까지 완료/실패한 종목을 체크포인트 파일에 저장한다."""
+    data = {
+        "completed_symbols": completed_symbols,
+        "failed_symbols": failed_symbols,
+        "last_updated": datetime.now().isoformat(),
+        "total_completed": len(completed_symbols),
+        "total_failed": len(failed_symbols),
+    }
+    with open(CHECKPOINT_FILE, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def _clear_checkpoint():
+    """체크포인트 파일을 삭제한다 (전체 완료 시)."""
+    if CHECKPOINT_FILE.exists():
+        CHECKPOINT_FILE.unlink()
+
+
 # 설정
 TIME_PERIODS = [
     {"name": "12달", "button_text": "1Y", "interval": "1 날"},
@@ -86,35 +124,8 @@ TIME_PERIODS = [
     {"name": "1일", "button_text": "1D", "interval": "1 분"},
 ]
 
-# 종목 리스트 (etf2_db 테이블 기준 - 101개 종목)
-# S&P 500 상위 시가총액 종목 + 주요 기술/금융/헬스케어 종목
-STOCK_LIST = [
-    # Technology (30개)
-    "AAPL", "MSFT", "NVDA", "GOOGL", "GOOG", "META", "AVGO", "ADBE",
-    "CRM", "CSCO", "ORCL", "AMD", "INTC", "QCOM", "TXN", "NOW",
-    "INTU", "AMAT", "ADI", "LRCX", "KLAC", "MU", "PANW", "CRWD",
-    "ANET", "PLTR", "APP", "IBM", "HOOD", "IBKR",
-    # Communication Services (4개)
-    "AMZN", "TSLA", "NFLX", "T",
-    # Consumer (9개)
-    "WMT", "HD", "COST", "MCD", "LOW", "TJX", "BKNG", "PEP", "KO",
-    # Financials (15개)
-    "BRK.B", "JPM", "V", "MA", "BAC", "WFC", "GS", "MS", "BLK",
-    "SCHW", "AXP", "C", "SPGI", "COF", "BX",
-    # Healthcare (14개)
-    "UNH", "JNJ", "LLY", "ABBV", "MRK", "PFE", "TMO", "ABT",
-    "DHR", "AMGN", "ISRG", "GILD", "BSX", "SYK",
-    # Industrials (12개)
-    "CAT", "GE", "HON", "UNP", "BA", "RTX", "LMT", "DE",
-    "ETN", "PLD", "MDT", "MMM",
-    # Energy (3개)
-    "XOM", "CVX", "COP",
-    # Consumer Staples (3개)
-    "PG", "PM", "LIN",
-    # Utilities & Others (11개)
-    "NEE", "CEG", "DIS", "VZ", "TMUS", "UBER", "GEV", "PGR",
-    "WELL", "APH", "ACN",
-]
+# 종목 리스트는 config/symbols.yaml에서 로드
+from config.symbol_loader import STOCK_LIST, NYSE_SYMBOLS, SECTOR_MAP
 
 DOWNLOAD_DIR = Path("./downloads")
 COOKIES_FILE = Path("./cookies.json")
@@ -700,12 +711,13 @@ class TradingViewScraper:
 
         return results
 
-    async def process_all_stocks(self, stock_list: list = None) -> dict:
+    async def process_all_stocks(self, stock_list: list = None, resume: bool = True) -> dict:
         """
-        모든 종목에 대해 데이터 수집
+        모든 종목에 대해 데이터 수집 (체크포인트/재개 기능 포함)
 
         Args:
             stock_list: 종목 리스트 (없으면 기본 STOCK_LIST 사용)
+            resume: True면 이전 체크포인트에서 이어서 수집
 
         Returns:
             결과 딕셔너리 {symbol: {period_name: file_path}}
@@ -714,22 +726,78 @@ class TradingViewScraper:
             stock_list = STOCK_LIST
 
         all_results = {}
+        completed_symbols = []
+        failed_symbols = []
+
+        # 체크포인트에서 이전 진행 상황 로드
+        if resume:
+            checkpoint = _load_checkpoint()
+            if checkpoint.get("completed_symbols"):
+                completed_symbols = list(checkpoint["completed_symbols"])
+                logger.info(f"체크포인트 발견: {len(completed_symbols)}개 종목 이미 완료. 나머지부터 재개합니다.")
+
+        completed_set = set(completed_symbols)
 
         # 차트 페이지로 이동
         await self.navigate_to_chart()
 
         for i, symbol in enumerate(stock_list):
+            # 체크포인트: 이미 완료된 종목은 건너뛰기
+            if symbol in completed_set:
+                logger.info(f"[{i + 1}/{len(stock_list)}] {symbol} - 이미 완료, 건너뜀")
+                continue
+
             logger.info(f"\n{'=' * 50}")
-            logger.info(f"[{i + 1}/{len(stock_list)}] {symbol} 처리 중...")
+            logger.info(f"[{i + 1}/{len(stock_list)}] {symbol} 처리 중... (완료: {len(completed_symbols)}, 실패: {len(failed_symbols)})")
             logger.info("=" * 50)
 
-            results = await self.process_single_stock(symbol)
-            all_results[symbol] = results
+            try:
+                results = await self.process_single_stock(symbol)
+                all_results[symbol] = results
+
+                if results:
+                    completed_symbols.append(symbol)
+                    completed_set.add(symbol)
+                else:
+                    failed_symbols.append(symbol)
+            except Exception as e:
+                logger.error(f"[{symbol}] 예외 발생: {e}")
+                failed_symbols.append(symbol)
+
+            # 체크포인트 저장 (매 종목 완료 후)
+            _save_checkpoint(completed_symbols, failed_symbols)
 
             # Rate limiting
             await asyncio.sleep(2)
 
+        # 전체 완료 시 체크포인트 삭제
+        if len(completed_symbols) == len(stock_list):
+            _clear_checkpoint()
+            logger.info(f"전체 완료: {len(completed_symbols)}/{len(stock_list)}")
+        else:
+            logger.info(f"부분 완료: {len(completed_symbols)}/{len(stock_list)} 성공, {len(failed_symbols)}개 실패")
+            if failed_symbols:
+                logger.info(f"실패 종목: {failed_symbols}")
+
         return all_results
+
+    async def retry_failed(self) -> dict:
+        """체크포인트에서 실패한 종목만 재수집한다."""
+        checkpoint = _load_checkpoint()
+        if not checkpoint:
+            logger.info("체크포인트 파일이 없습니다.")
+            return {}
+
+        completed_set = set(checkpoint.get("completed_symbols", []))
+        failed = [s for s in STOCK_LIST if s not in completed_set]
+
+        if not failed:
+            logger.info("모든 종목이 이미 완료되었습니다.")
+            _clear_checkpoint()
+            return {}
+
+        logger.info(f"실패/미완료 종목 {len(failed)}개 재수집 시작")
+        return await self.process_all_stocks(stock_list=failed, resume=False)
 
 
 async def main():
@@ -768,11 +836,13 @@ async def main():
         headless = True
 
     if not username or not password:
-        logger.warning("환경변수가 설정되지 않았습니다.")
-        logger.warning(".env 파일에 다음 내용을 추가하세요:")
-        logger.warning("  TRADINGVIEW_USERNAME=your_username")
-        logger.warning("  TRADINGVIEW_PASSWORD=your_password")
-        return
+        if not cookie_valid:
+            logger.error("환경변수가 설정되지 않았고, 유효한 쿠키도 없습니다.")
+            logger.error(".env 파일에 다음 내용을 추가하세요:")
+            logger.error("  TRADINGVIEW_USERNAME=your_username")
+            logger.error("  TRADINGVIEW_PASSWORD=your_password")
+            return
+        logger.info("환경변수 없음 - 쿠키로 로그인 진행")
 
     # 테스트용: 단일 종목만 처리
     # test_symbols = ["NVDA", "AAPL"]
@@ -795,25 +865,10 @@ async def main():
                 logger.error("로그인 실패. 프로그램을 종료합니다.")
                 return
 
-        # 차트 페이지로 이동
-        await scraper.navigate_to_chart()
+        # 체크포인트 기반으로 전체 종목 수집 (중단 시 이어서 수집)
+        all_results = await scraper.process_all_stocks(stock_list=test_symbols, resume=True)
 
-        # 로그인 상태 확인을 위해 잠시 대기
-        await asyncio.sleep(2)
-
-        # 종목 처리
-        for symbol in test_symbols:
-            logger.info(f"\n{'=' * 50}")
-            logger.info(f"{symbol} 데이터 수집 시작")
-            logger.info("=" * 50)
-
-            results = await scraper.process_single_stock(symbol)
-
-            logger.info(f"\n{symbol} 결과:")
-            for period, path in results.items():
-                logger.info(f"  - {period}: {path}")
-
-        logger.info("\n모든 작업 완료!")
+        logger.info(f"\n모든 작업 완료! (총 {len(all_results)}개 종목 수집)")
 
 
 if __name__ == "__main__":

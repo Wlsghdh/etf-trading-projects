@@ -7,9 +7,17 @@ Validates data quality across all stock tables in the MySQL database.
 import json
 import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, List, Any
 import pymysql
 from pymysql.cursors import DictCursor
+
+# scraper-service를 sys.path에 추가하여 config 모듈 접근
+_SCRAPER_SERVICE_DIR = str(Path(__file__).resolve().parent.parent / "scraper-service")
+if _SCRAPER_SERVICE_DIR not in sys.path:
+    sys.path.insert(0, _SCRAPER_SERVICE_DIR)
+
+from config.symbol_loader import STOCK_LIST
 
 # Configuration
 DB_CONFIG = {
@@ -21,12 +29,7 @@ DB_CONFIG = {
     'cursorclass': DictCursor
 }
 
-STOCK_LIST = [
-    "NVDA", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "BRK.B",
-    "UNH", "JNJ", "V", "XOM", "WMT", "JPM", "MA", "PG", "CVX", "HD",
-    "LLY", "ABBV", "MRK", "AVGO", "PEP", "KO", "COST", "ADBE", "TMO",
-    "MCD", "CSCO", "CRM"
-]
+# STOCK_LIST는 config/symbols.yaml에서 로드 (상단 import)
 
 TIMEFRAMES = ["D", "1h"]  # Daily and 1-hour data
 

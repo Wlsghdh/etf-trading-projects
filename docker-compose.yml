@@ -65,6 +65,7 @@ services:
       - ./scraper-service/downloads:/app/downloads
       - ./scraper-service/cookies.json:/app/cookies.json:ro
       - ./scraper-service/.env:/app/.env:ro
+      - ./scraper-service/config:/app/config:ro
       - /usr/share/zoneinfo/Asia/Seoul:/etc/localtime:ro
     extra_hosts:
       - "host.docker.internal:172.17.0.1"
