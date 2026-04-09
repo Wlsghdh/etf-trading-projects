@@ -62,6 +62,8 @@ export interface ScraperJobStatus {
   startedAt?: string;
   completedAt?: string;
   message?: string;
+  /** symbols.yaml에 설정된 전체 종목 수 (실행 중이 아니어도 항상 채워짐) */
+  configuredTotal?: number;
 }
 
 // 예측 캔들 데이터

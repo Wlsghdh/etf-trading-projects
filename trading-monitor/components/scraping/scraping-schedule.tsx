@@ -1,5 +1,6 @@
 'use client';
 
+import { useScraperStatus } from '@/hooks/use-scraper-status';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
@@ -21,19 +22,21 @@ const CRON_JOBS: CronJob[] = [
   },
 ];
 
-const PIPELINE_STEPS = [
-  {
-    time: '05:00',
-    label: '미국장 마감',
-    type: 'event' as const,
-    detail: '서머타임 기준 (동절기 06:00)',
-  },
-  {
-    time: '06:00',
-    label: '데이터 수집 시작',
-    type: 'cron' as const,
-    detail: '101종목 × 4 타임프레임, TradingView 스크래핑',
-  },
+function buildPipelineSteps(totalSymbols?: number) {
+  const totalLabel = totalSymbols ? `${totalSymbols}종목` : '전체 종목';
+  return [
+    {
+      time: '05:00',
+      label: '미국장 마감',
+      type: 'event' as const,
+      detail: '서머타임 기준 (동절기 06:00)',
+    },
+    {
+      time: '06:00',
+      label: '데이터 수집 시작',
+      type: 'cron' as const,
+      detail: `${totalLabel} × 4 타임프레임, TradingView 스크래핑`,
+    },
   {
     time: '~07:00',
     label: '피처 엔지니어링',
@@ -53,6 +56,7 @@ const PIPELINE_STEPS = [
     detail: '서머타임 기준 (동절기 23:30)',
   },
 ];
+}
 
 const TYPE_COLORS = {
   cron: 'bg-blue-500',
@@ -61,6 +65,10 @@ const TYPE_COLORS = {
 };
 
 export function ScrapingSchedule() {
+  const { data: status } = useScraperStatus();
+  const totalSymbols = status?.totalSymbols ?? status?.configuredTotal;
+  const PIPELINE_STEPS = buildPipelineSteps(totalSymbols);
+
   return (
     <Card className="shadow-sm">
       <CardHeader className="pb-3">

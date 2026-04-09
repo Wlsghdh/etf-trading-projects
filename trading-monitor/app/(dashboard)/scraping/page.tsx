@@ -20,7 +20,7 @@ const SCRAPING_HELP_ITEMS = [
   {
     color: 'bg-green-500',
     label: '완료 (초록색)',
-    description: '모든 101종목 수집 완료. 에러 없이 정상 종료.',
+    description: 'symbols.yaml에 정의된 전체 종목 수집 완료. 에러 없이 정상 종료.',
   },
   {
     color: 'bg-red-500',
