@@ -15,15 +15,23 @@ function toKST(utcTimestamp: unknown): string | undefined {
 function normalizeStatus(data: Record<string, unknown>, configuredTotal?: number) {
   const progress = data.progress as Record<string, unknown> | undefined;
   const runningTotal = progress?.total as number | undefined;
+  const status = (data.status as string) || 'idle';
+  const isRunning = status === 'running';
+
+  // 실행 중일 땐 진행 중인 job의 total, 그 외(idle/completed/error)에는
+  // 항상 symbols.yaml의 최신 configuredTotal을 우선 사용한다.
+  // (마지막 완료 job의 stale total 대신 다음 실행 예정 종목 수를 노출)
+  const totalSymbols = isRunning
+    ? runningTotal
+    : (configuredTotal ?? runningTotal);
 
   return {
-    status: data.status || 'idle',
+    status,
     currentSymbol: data.current_symbol || progress?.current_symbol || undefined,
     progress: runningTotal
       ? Math.round(((progress!.current as number) / runningTotal) * 100)
       : undefined,
-    // 실행 중일 땐 실제 진행 중인 total, 아니면 yaml 기반 configured total로 fallback
-    totalSymbols: runningTotal ?? configuredTotal,
+    totalSymbols,
     completedSymbols: progress?.current || undefined,
     errorSymbols: progress?.errors || [],
     startedAt: toKST(data.start_time),
