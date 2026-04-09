@@ -20,6 +20,7 @@ import {
   AiChat02Icon,
   UserGroupIcon,
   SearchList01Icon,
+  StrategyIcon,
   Sun03Icon,
   Moon02Icon,
 } from '@hugeicons/core-free-icons';
@@ -45,6 +46,7 @@ const navItems: NavItem[] = [
   { href: '/multi-ai', label: '멀티AI', icon: AiChat02Icon },
   { href: '/community', label: '커뮤니티', icon: UserGroupIcon },
   { href: '/stocks', label: '종목열람', icon: SearchList01Icon },
+  { href: '/strategy', label: '매매전략', icon: StrategyIcon },
   { href: '/settings', label: '설정', icon: Settings02Icon },
 ];
 

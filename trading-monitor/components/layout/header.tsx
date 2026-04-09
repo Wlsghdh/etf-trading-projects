@@ -14,6 +14,7 @@ const pageTitles: Record<string, string> = {
   '/portfolio': '포트폴리오',
   '/order-logs': 'KIS 주문 로그',
   '/db-viewer': 'DB 뷰어',
+  '/strategy': '매매전략',
   '/settings': '설정',
   '/admin': '관리자',
 };
