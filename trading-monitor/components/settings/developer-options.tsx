@@ -259,7 +259,7 @@ export function DeveloperOptions({ config, onUpdate }: DeveloperOptionsProps) {
               <button
                 onClick={handleReset}
                 disabled={resetLoading}
-                className="w-full rounded-md border border-red-800 bg-red-950/50 px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-900/50 transition-colors disabled:opacity-50"
+                className="w-full rounded-md border border-red-500/50 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-500/20 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400 dark:hover:bg-red-900/50 transition-colors disabled:opacity-50"
               >
                 {resetLoading ? '리셋 중...' : '사이클 리셋'}
               </button>
@@ -267,7 +267,7 @@ export function DeveloperOptions({ config, onUpdate }: DeveloperOptionsProps) {
                 활성 사이클을 종료합니다. KIS 모의투자 잔고 리셋은 한국투자증권 사이트에서 진행하세요.
               </p>
               {resetMsg && (
-                <div className="text-xs text-yellow-400 bg-yellow-500/10 rounded px-2 py-1.5">
+                <div className="text-xs text-yellow-700 bg-yellow-500/15 dark:text-yellow-400 dark:bg-yellow-500/10 rounded px-2 py-1.5">
                   {resetMsg}
                 </div>
               )}
