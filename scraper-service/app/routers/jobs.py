@@ -10,6 +10,7 @@ from app.config import settings
 from app.models.task_info import task_info_manager, JobStatus, SymbolStatus
 from app.services.scraper import scraper, STOCK_LIST
 from app.services.db_service import DatabaseService
+from config.symbol_loader import SECTOR_MAP, NYSE_SYMBOLS
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -20,6 +21,22 @@ class JobResponse(BaseModel):
     job_id: str
     status: str
     message: str
+
+
+class ConfiguredSymbolItem(BaseModel):
+    """단일 종목 메타데이터."""
+    symbol: str
+    sector: str
+    exchange: str  # NYSE | NASDAQ
+
+
+class ConfiguredSymbolsResponse(BaseModel):
+    """symbols.yaml 기반 설정 종목 목록."""
+    count: int
+    symbols: List[str]
+    items: List[ConfiguredSymbolItem]
+    sectors: dict  # {sector_name: [symbol, ...]}
+    source: str = "symbols.yaml"
 
 
 class JobStatusResponse(BaseModel):
@@ -46,6 +63,36 @@ async def run_scraping_job(symbols: List[str], is_retry: bool = False, job_id: s
     except Exception as e:
         logger.error(f"Scraping job failed: {e}")
         await task_info_manager.update_job_status(JobStatus.ERROR)
+
+
+@router.get("/symbols/configured", response_model=ConfiguredSymbolsResponse)
+def list_configured_symbols():
+    """
+    symbols.yaml에 정의된 전체 종목 리스트 반환.
+
+    DB에 실제 데이터가 있는지 여부와 무관하게, 스크래핑 대상으로
+    설정된 모든 종목(약 1000개)을 섹터/거래소 메타데이터와 함께 반환한다.
+    """
+    items = [
+        ConfiguredSymbolItem(
+            symbol=sym,
+            sector=SECTOR_MAP.get(sym, "Unknown"),
+            exchange="NYSE" if sym in NYSE_SYMBOLS else "NASDAQ",
+        )
+        for sym in STOCK_LIST
+    ]
+
+    sectors: dict = {}
+    for sym in STOCK_LIST:
+        sec = SECTOR_MAP.get(sym, "Unknown")
+        sectors.setdefault(sec, []).append(sym)
+
+    return ConfiguredSymbolsResponse(
+        count=len(STOCK_LIST),
+        symbols=STOCK_LIST,
+        items=items,
+        sectors=sectors,
+    )
 
 
 @router.post("/full", response_model=JobResponse)

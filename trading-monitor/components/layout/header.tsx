@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { useConnectionStatus } from '@/hooks/use-connection-status';
+import { ThemeToggle } from '@/components/theme/theme-toggle';
 
 const pageTitles: Record<string, string> = {
   '/': '대시보드',
@@ -48,6 +49,7 @@ export function Header() {
             weekday: 'short',
           })}
         </span>
+        <ThemeToggle />
       </div>
     </header>
   );
