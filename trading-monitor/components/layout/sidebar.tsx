@@ -20,7 +20,10 @@ import {
   AiChat02Icon,
   UserGroupIcon,
   SearchList01Icon,
+  Sun03Icon,
+  Moon02Icon,
 } from '@hugeicons/core-free-icons';
+import { useTheme } from '@/hooks/use-theme';
 
 interface NavItem {
   href: string;
@@ -56,10 +59,13 @@ export function Sidebar() {
   const router = useRouter();
   const [role, setRole] = useState('user');
   const [userName, setUserName] = useState('');
+  const theme = useTheme();
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setRole(getCookie('user-role') || 'user');
     setUserName(getCookie('user-name') || '');
+    setMounted(true);
   }, []);
 
   const isAdmin = role === 'admin';
@@ -70,6 +76,23 @@ export function Sidebar() {
     router.push('/login');
     router.refresh();
   };
+
+  const toggleTheme = () => {
+    const root = document.documentElement;
+    const next = root.classList.contains('dark') ? 'light' : 'dark';
+    if (next === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    try {
+      localStorage.setItem('tm-theme', next);
+    } catch {
+      /* localStorage 비활성 환경 무시 */
+    }
+  };
+
+  const isDark = mounted ? theme === 'dark' : true;
 
   return (
     <aside className="flex w-56 flex-col border-r border-border bg-sidebar">
@@ -109,6 +132,19 @@ export function Sidebar() {
             {userName || 'User'} {isAdmin ? '(Admin)' : ''}
           </span>
         </div>
+        <button
+          type="button"
+          onClick={toggleTheme}
+          aria-label={isDark ? '라이트 모드로 전환' : '다크 모드로 전환'}
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"
+        >
+          <HugeiconsIcon
+            icon={isDark ? Sun03Icon : Moon02Icon}
+            className="h-4 w-4"
+            strokeWidth={2}
+          />
+          {isDark ? '라이트 모드' : '다크 모드'}
+        </button>
         <button
           onClick={handleLogout}
           className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"

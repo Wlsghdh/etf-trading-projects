@@ -12,6 +12,7 @@ import {
   Cancel01Icon,
 } from '@hugeicons/core-free-icons';
 import Markdown from 'react-markdown';
+import { useTheme } from '@/hooks/use-theme';
 
 // ── Types ──
 
@@ -240,6 +241,7 @@ const TV_EXCHANGE: Record<string, string> = {
 
 function TradingViewChart({ symbol }: { symbol: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
   useEffect(() => {
     if (!ref.current || !symbol) return;
     ref.current.innerHTML = '';
@@ -249,7 +251,7 @@ function TradingViewChart({ symbol }: { symbol: string }) {
     script.async = true;
     script.innerHTML = JSON.stringify({
       autosize: true, symbol: tvSym, interval: 'D', timezone: 'Asia/Seoul',
-      theme: 'dark', style: '1', locale: 'kr', hide_top_toolbar: false,
+      theme, style: '1', locale: 'kr', hide_top_toolbar: false,
       allow_symbol_change: true, save_image: false, calendar: false,
       studies: ['RSI@tv-basicstudies', 'MACD@tv-basicstudies'],
     });
@@ -263,7 +265,7 @@ function TradingViewChart({ symbol }: { symbol: string }) {
     w.appendChild(script);
     ref.current.appendChild(w);
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, [symbol]);
+  }, [symbol, theme]);
   return <div ref={ref} className="w-full h-full" />;
 }
 

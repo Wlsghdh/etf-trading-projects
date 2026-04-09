@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { HugeiconsIcon } from '@hugeicons/react';
+import { useTheme } from '@/hooks/use-theme';
 import {
   FavouriteIcon,
   Search01Icon,
@@ -65,6 +66,7 @@ interface NewsItem {
 function TVTimeline() {
   const ref = useRef<HTMLDivElement>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const theme = useTheme();
 
   // 1시간마다 위젯 강제 리로드 (Top Stories와 동기화)
   useEffect(() => {
@@ -87,7 +89,7 @@ function TVTimeline() {
       displayMode: 'regular',
       width: '100%',
       height: '100%',
-      colorTheme: 'dark',
+      colorTheme: theme,
       locale: 'en',
     });
 
@@ -102,7 +104,7 @@ function TVTimeline() {
     ref.current.appendChild(wrapper);
 
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, [reloadKey]);
+  }, [reloadKey, theme]);
 
   return <div ref={ref} className="h-full w-full" />;
 }
@@ -110,6 +112,7 @@ function TVTimeline() {
 function TVHotlists() {
   const ref = useRef<HTMLDivElement>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const theme = useTheme();
 
   // 1시간마다 위젯 강제 리로드
   useEffect(() => {
@@ -126,7 +129,7 @@ function TVHotlists() {
     script.type = 'text/javascript';
     script.async = true;
     script.innerHTML = JSON.stringify({
-      colorTheme: 'dark',
+      colorTheme: theme,
       dateRange: '1M',
       exchange: 'US',
       showSymbolLogo: true,
@@ -147,13 +150,14 @@ function TVHotlists() {
     ref.current.appendChild(wrapper);
 
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, [reloadKey]);
+  }, [reloadKey, theme]);
 
   return <div ref={ref} className="h-full w-full" />;
 }
 
 function TVChart({ symbol }: { symbol: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
 
   useEffect(() => {
     if (!ref.current) return;
@@ -168,7 +172,7 @@ function TVChart({ symbol }: { symbol: string }) {
       symbol: getTVSymbol(symbol),
       interval: 'D',
       timezone: 'Asia/Seoul',
-      theme: 'dark',
+      theme,
       style: '1',
       locale: 'kr',
       hide_top_toolbar: false,
@@ -193,13 +197,14 @@ function TVChart({ symbol }: { symbol: string }) {
     ref.current.appendChild(wrapper);
 
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, [symbol]);
+  }, [symbol, theme]);
 
   return <div ref={ref} className="h-full w-full" />;
 }
 
 function TVSymbolInfo({ symbol }: { symbol: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
 
   useEffect(() => {
     if (!ref.current) return;
@@ -213,7 +218,7 @@ function TVSymbolInfo({ symbol }: { symbol: string }) {
       symbol: getTVSymbol(symbol),
       width: '100%',
       isTransparent: true,
-      colorTheme: 'dark',
+      colorTheme: theme,
       locale: 'en',
     });
 
@@ -227,7 +232,7 @@ function TVSymbolInfo({ symbol }: { symbol: string }) {
     ref.current.appendChild(wrapper);
 
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, [symbol]);
+  }, [symbol, theme]);
 
   return <div ref={ref} className="w-full" />;
 }
@@ -235,6 +240,7 @@ function TVSymbolInfo({ symbol }: { symbol: string }) {
 // ── 시장 개요 (Market Overview) ──
 function TVMarketOverview() {
   const ref = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
 
   useEffect(() => {
     if (!ref.current) return;
@@ -245,7 +251,7 @@ function TVMarketOverview() {
     script.type = 'text/javascript';
     script.async = true;
     script.innerHTML = JSON.stringify({
-      colorTheme: 'dark',
+      colorTheme: theme,
       dateRange: '1D',
       showChart: true,
       locale: 'en',
@@ -301,7 +307,7 @@ function TVMarketOverview() {
     ref.current.appendChild(wrapper);
 
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, []);
+  }, [theme]);
 
   return <div ref={ref} className="h-full w-full" />;
 }
@@ -309,6 +315,7 @@ function TVMarketOverview() {
 // ── 종목 스크리너 ──
 function TVScreener() {
   const ref = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
 
   useEffect(() => {
     if (!ref.current) return;
@@ -325,7 +332,7 @@ function TVScreener() {
       defaultScreen: 'most_capitalized',
       market: 'america',
       showToolbar: true,
-      colorTheme: 'dark',
+      colorTheme: theme,
       locale: 'en',
       isTransparent: true,
     });
@@ -341,7 +348,7 @@ function TVScreener() {
     ref.current.appendChild(wrapper);
 
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, []);
+  }, [theme]);
 
   return <div ref={ref} className="h-full w-full" />;
 }
@@ -349,6 +356,7 @@ function TVScreener() {
 // ── 티커 띠 (Ticker Tape) ──
 function TVTickerTape() {
   const ref = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
 
   useEffect(() => {
     if (!ref.current) return;
@@ -375,7 +383,7 @@ function TVTickerTape() {
       showSymbolLogo: true,
       isTransparent: true,
       displayMode: 'adaptive',
-      colorTheme: 'dark',
+      colorTheme: theme,
       locale: 'en',
     });
 
@@ -388,7 +396,7 @@ function TVTickerTape() {
     ref.current.appendChild(wrapper);
 
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, []);
+  }, [theme]);
 
   return <div ref={ref} className="w-full" />;
 }
@@ -396,6 +404,7 @@ function TVTickerTape() {
 // ── 경제 캘린더 (Events) ──
 function TVEvents() {
   const ref = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
 
   useEffect(() => {
     if (!ref.current) return;
@@ -406,7 +415,7 @@ function TVEvents() {
     script.type = 'text/javascript';
     script.async = true;
     script.innerHTML = JSON.stringify({
-      colorTheme: 'dark',
+      colorTheme: theme,
       isTransparent: true,
       width: '100%',
       height: '100%',
@@ -426,7 +435,7 @@ function TVEvents() {
     ref.current.appendChild(wrapper);
 
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, []);
+  }, [theme]);
 
   return <div ref={ref} className="h-full w-full" />;
 }
