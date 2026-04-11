@@ -50,7 +50,7 @@ export interface ScraperLogsResponse {
 }
 
 // 스크래퍼 작업 상태
-export type JobStatus = 'idle' | 'running' | 'completed' | 'error';
+export type JobStatus = 'idle' | 'running' | 'completed' | 'partial' | 'error';
 
 export interface ScraperJobStatus {
   status: JobStatus;

@@ -5,10 +5,11 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import type { ScraperJobStatus, JobStatus } from '@/lib/chart-types';
 
-const STATUS_CONFIG: Record<JobStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+const STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   idle: { label: '대기', variant: 'outline' },
   running: { label: '실행중', variant: 'default' },
   completed: { label: '완료', variant: 'secondary' },
+  partial: { label: '부분완료', variant: 'secondary' },
   error: { label: '에러', variant: 'destructive' },
 };
 
@@ -31,7 +32,7 @@ export function JobStatusCard({ status, isLoading }: JobStatusCardProps) {
     );
   }
 
-  const config = STATUS_CONFIG[status.status];
+  const config = STATUS_CONFIG[status.status] ?? { label: status.status, variant: 'outline' as const };
 
   return (
     <Card className="shadow-sm">

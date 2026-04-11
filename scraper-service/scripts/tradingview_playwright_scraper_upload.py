@@ -489,7 +489,7 @@ class TradingViewScraper:
 
     async def change_time_period(self, button_text: str) -> bool:
         """
-        시간 단위 변경
+        시간 단위 변경 - 여러 셀렉터를 순차적으로 시도
 
         Args:
             button_text: 버튼 텍스트 (예: "1Y", "1M", "5D", "1D")
@@ -499,28 +499,61 @@ class TradingViewScraper:
         """
         logger.info(f"시간 단위 변경: {button_text}")
 
-        try:
-            # 하단 툴바의 기간 버튼 클릭
-            # 버튼 이름이 "1 날 인터벌 의 1 년₩" 형식으로 되어있음
-            period_button = self.page.locator(f'button:has-text("{button_text}")').first
-            await period_button.click(timeout=5000)
+        # 시도할 셀렉터 목록 (우선순위 순)
+        selectors = [
+            f'button[data-value="{button_text}"]',
+            f'button[value="{button_text}"]',
+            f'button:has-text("{button_text}")',
+            f'#header-toolbar-intervals button:has-text("{button_text}")',
+            f'div[class*="dateRangeExpander"] button:has-text("{button_text}")',
+            f'div[class*="range-tab"] button:has-text("{button_text}")',
+            f'div[class*="date-range"] button:has-text("{button_text}")',
+        ]
 
-            await asyncio.sleep(2)  # 차트 갱신 대기
-            logger.info(f"시간 단위 변경 완료: {button_text}")
-            return True
-
-        except Exception as e:
-            logger.error(f"시간 단위 변경 실패: {e}")
-            # 대체 방법: 하단 툴바에서 텍스트로 찾기
+        for i, selector in enumerate(selectors):
             try:
-                alt_button = self.page.get_by_text(button_text, exact=True).first
-                await alt_button.click(timeout=5000)
+                btn = self.page.locator(selector).first
+                await btn.click(timeout=3000)
                 await asyncio.sleep(2)
-                logger.info(f"시간 단위 변경 완료 (대체방법): {button_text}")
+                logger.info(f"시간 단위 변경 완료 (방법 {i+1}): {button_text}")
                 return True
-            except:
-                logger.error(f"시간 단위 변경 최종 실패: {e}")
-                return False
+            except Exception:
+                continue
+
+        # JavaScript로 직접 클릭
+        try:
+            clicked = await self.page.evaluate(f"""
+                () => {{
+                    const buttons = document.querySelectorAll('button');
+                    for (const btn of buttons) {{
+                        const text = btn.textContent.trim();
+                        if (text === '{button_text}') {{
+                            btn.click();
+                            return true;
+                        }}
+                    }}
+                    return false;
+                }}
+            """)
+            if clicked:
+                await asyncio.sleep(2)
+                logger.info(f"시간 단위 변경 완료 (JS): {button_text}")
+                return True
+        except Exception:
+            pass
+
+        # get_by_role로 시도
+        try:
+            btn = self.page.get_by_role("button", name=button_text, exact=True)
+            await btn.click(timeout=3000)
+            await asyncio.sleep(2)
+            logger.info(f"시간 단위 변경 완료 (role): {button_text}")
+            return True
+        except Exception:
+            pass
+
+        logger.error(f"시간 단위 변경 최종 실패: {button_text}")
+        return False
 
     def _get_timeframe_code(self, period_name: str) -> str:
         """
@@ -533,12 +566,12 @@ class TradingViewScraper:
             Timeframe code for database (e.g., "D", "1h")
         """
         timeframe_map = {
-            "12달": "D",  # Daily for 12-month data
-            "12개월": "D",  # Daily for 12-month data
-            "1달": "D",  # Daily for 1-month data
-            "1개월": "D",  # Daily for 1-month data
-            "1주": "D",  # Daily for 1-week data
-            "1일": "1h",  # Hourly for 1-day data
+            "12달": "D",     # Daily for 12-month data
+            "12개월": "D",   # Daily for 12-month data
+            "1달": "30m",    # 30-min for 1-month data
+            "1개월": "30m",  # 30-min for 1-month data
+            "1주": "5m",     # 5-min for 1-week data
+            "1일": "1m",     # 1-min for 1-day data
         }
         return timeframe_map.get(period_name, "D")
 

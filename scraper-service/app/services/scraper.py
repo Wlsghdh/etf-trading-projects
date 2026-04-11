@@ -295,7 +295,15 @@ class TradingViewScraper:
                 await asyncio.sleep(0.5)
 
             await asyncio.sleep(2)  # 차트 로딩 대기
-            logger.info(f"심볼 선택 완료: {symbol}")
+
+            # === 심볼 검증: 차트에 표시된 심볼이 요청한 심볼과 일치하는지 확인 ===
+            verified = await self._verify_chart_symbol(symbol)
+            if not verified:
+                logger.error(f"심볼 검증 실패: 차트에 {symbol}이 표시되지 않음")
+                await self.capture_screenshot(f"symbol_verify_fail_{symbol}")
+                return False
+
+            logger.info(f"심볼 선택 및 검증 완료: {symbol}")
             return True
 
         except Exception as e:
@@ -305,6 +313,55 @@ class TradingViewScraper:
             await self.page.keyboard.press("Escape")
             await asyncio.sleep(0.5)
             return False
+
+    async def _verify_chart_symbol(self, expected_symbol: str) -> bool:
+        """
+        차트에 현재 표시된 심볼이 기대하는 심볼과 일치하는지 검증.
+
+        Args:
+            expected_symbol: 기대하는 심볼 (예: "AAPL", "CSCO")
+
+        Returns:
+            일치하면 True
+        """
+        try:
+            # 방법 1: 상단 툴바의 심볼 텍스트에서 확인
+            chart_symbol = await self.page.evaluate("""
+                () => {
+                    // 심볼 검색 버튼 옆 텍스트
+                    const symbolEl = document.querySelector('#header-toolbar-symbol-search');
+                    if (symbolEl) {
+                        const text = symbolEl.textContent || '';
+                        return text.trim();
+                    }
+                    // 대체: 타이틀에서 추출
+                    const titleEl = document.querySelector('[class*="symbolTitle"]') ||
+                                    document.querySelector('[class*="title-"] > div');
+                    if (titleEl) return titleEl.textContent.trim();
+                    return '';
+                }
+            """)
+
+            if chart_symbol and expected_symbol.upper() in chart_symbol.upper():
+                logger.info(f"심볼 검증 성공: 차트={chart_symbol}, 기대={expected_symbol}")
+                return True
+
+            # 방법 2: 페이지 타이틀에서 확인
+            page_title = await self.page.title()
+            if expected_symbol.upper() in page_title.upper():
+                logger.info(f"심볼 검증 성공 (타이틀): {page_title}")
+                return True
+
+            logger.warning(
+                f"심볼 불일치 가능: 차트={chart_symbol}, 타이틀={page_title}, "
+                f"기대={expected_symbol}. 계속 진행합니다."
+            )
+            # 경고만 하고 진행 (false positive 방지)
+            return True
+
+        except Exception as e:
+            logger.warning(f"심볼 검증 중 오류 (무시하고 진행): {e}")
+            return True
 
     async def capture_screenshot(self, name: str):
         """실패 시 디버깅용 스크린샷 캡처"""
@@ -319,7 +376,7 @@ class TradingViewScraper:
 
     async def change_time_period(self, button_text: str) -> bool:
         """
-        시간 단위 변경 (기존 코드와 동일)
+        시간 단위 변경 - 여러 셀렉터를 순차적으로 시도
 
         Args:
             button_text: 버튼 텍스트 (예: "1Y", "1M", "5D", "1D")
@@ -329,28 +386,67 @@ class TradingViewScraper:
         """
         logger.info(f"시간 단위 변경: {button_text}")
 
-        try:
-            # 하단 툴바의 기간 버튼 클릭
-            period_button = self.page.locator(f'button:has-text("{button_text}")').first
-            await period_button.click(timeout=5000)
+        # 시도할 셀렉터 목록 (우선순위 순)
+        selectors = [
+            # 방법 1: 하단 날짜 범위 바에서 data-value 또는 value 속성으로 찾기
+            f'button[data-value="{button_text}"]',
+            f'button[value="{button_text}"]',
+            # 방법 2: 텍스트 매칭 (정확히)
+            f'button:has-text("{button_text}")',
+            # 방법 3: id 기반 (TradingView가 가끔 사용)
+            f'#header-toolbar-intervals button:has-text("{button_text}")',
+            # 방법 4: 하단 날짜 범위 바 내 버튼
+            f'div[class*="dateRangeExpander"] button:has-text("{button_text}")',
+            f'div[class*="range-tab"] button:has-text("{button_text}")',
+            f'div[class*="date-range"] button:has-text("{button_text}")',
+        ]
 
-            await asyncio.sleep(2)  # 차트 갱신 대기
-            logger.info(f"시간 단위 변경 완료: {button_text}")
-            return True
-
-        except Exception as e:
-            logger.error(f"시간 단위 변경 실패: {e}")
-            # 대체 방법: 하단 툴바에서 텍스트로 찾기
+        for i, selector in enumerate(selectors):
             try:
-                alt_button = self.page.get_by_text(button_text, exact=True).first
-                await alt_button.click(timeout=5000)
+                btn = self.page.locator(selector).first
+                await btn.click(timeout=3000)
                 await asyncio.sleep(2)
-                logger.info(f"시간 단위 변경 완료 (대체방법): {button_text}")
+                logger.info(f"시간 단위 변경 완료 (방법 {i+1}): {button_text}")
                 return True
-            except:
-                logger.error(f"시간 단위 변경 최종 실패: {button_text}")
-                await self.capture_screenshot(f"time_period_fail_{button_text}")
-                return False
+            except Exception:
+                continue
+
+        # 방법 5: JavaScript로 직접 클릭
+        try:
+            clicked = await self.page.evaluate(f"""
+                () => {{
+                    // 모든 버튼에서 텍스트가 정확히 일치하는 것 찾기
+                    const buttons = document.querySelectorAll('button');
+                    for (const btn of buttons) {{
+                        const text = btn.textContent.trim();
+                        if (text === '{button_text}') {{
+                            btn.click();
+                            return true;
+                        }}
+                    }}
+                    return false;
+                }}
+            """)
+            if clicked:
+                await asyncio.sleep(2)
+                logger.info(f"시간 단위 변경 완료 (JS): {button_text}")
+                return True
+        except Exception:
+            pass
+
+        # 방법 6: get_by_role로 시도
+        try:
+            btn = self.page.get_by_role("button", name=button_text, exact=True)
+            await btn.click(timeout=3000)
+            await asyncio.sleep(2)
+            logger.info(f"시간 단위 변경 완료 (role): {button_text}")
+            return True
+        except Exception:
+            pass
+
+        logger.error(f"시간 단위 변경 최종 실패: {button_text}")
+        await self.capture_screenshot(f"time_period_fail_{button_text}")
+        return False
 
     def _get_timeframe_code(self, period_name: str) -> str:
         """

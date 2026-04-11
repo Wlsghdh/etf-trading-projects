@@ -230,6 +230,122 @@ class DatabaseService:
 
         return df
 
+    def _detect_csv_timeframe(self, df: pd.DataFrame) -> str:
+        """
+        CSV 데이터의 실제 타임프레임을 시간 간격으로 감지.
+
+        Returns:
+            감지된 타임프레임 코드 ('D', '30m', '5m', '1m', 'unknown')
+        """
+        if len(df) < 3:
+            return "unknown"
+
+        # 시간 차이 계산 (초 단위)
+        time_diffs = df["time"].diff().dropna().dt.total_seconds()
+        # 0 이하 제거 (중복/정렬 이슈)
+        time_diffs = time_diffs[time_diffs > 0]
+
+        if len(time_diffs) == 0:
+            return "unknown"
+
+        median_diff = time_diffs.median()
+
+        # 일봉: 중앙값이 12시간(43200초) 이상
+        if median_diff >= 43200:
+            return "D"
+        # 30분봉: 중앙값이 15분~3시간
+        elif 900 <= median_diff < 10800:
+            return "30m"
+        # 5분봉: 중앙값이 2분~15분
+        elif 120 <= median_diff < 900:
+            return "5m"
+        # 1분봉: 중앙값이 2분 미만
+        elif median_diff < 120:
+            return "1m"
+        else:
+            return "unknown"
+
+    def _validate_csv_for_daily(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """
+        _D 테이블에 삽입 전: intraday 데이터를 필터링하고 하루 1행만 유지.
+
+        - 하루에 여러 행이 있으면 마지막 행(장 마감 가격)만 유지
+        - 가격 이상치 필터링 (같은 날 max/min 비율이 3배 초과하면 경고)
+
+        Returns:
+            정제된 DataFrame
+        """
+        original_len = len(df)
+
+        # 날짜 컬럼 추가
+        df["_date"] = df["time"].dt.date
+
+        # 하루에 여러 행이 있는지 체크
+        rows_per_day = df.groupby("_date").size()
+        multi_row_days = (rows_per_day > 1).sum()
+
+        if multi_row_days > 0:
+            logger.warning(
+                f"[{symbol}] _D 테이블: {multi_row_days}일에 intraday 데이터 감지 "
+                f"(총 {original_len}행). 하루 마지막 행만 유지합니다."
+            )
+            # 각 날짜의 마지막 행만 유지 (장 마감 가격)
+            df = df.sort_values("time").groupby("_date").last().reset_index()
+            # time 컬럼을 날짜 00:00:00 으로 정규화
+            df["time"] = pd.to_datetime(df["_date"])
+            logger.info(f"[{symbol}] 정제 후: {len(df)}행 (원본 {original_len}행)")
+
+        df = df.drop(columns=["_date"])
+        return df
+
+    def _validate_price_sanity(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """
+        가격 이상치 필터링: 연속된 행 대비 가격이 10배 이상 변동하면 제거.
+        다른 종목 데이터가 섞여 있는 경우를 감지/제거.
+        """
+        if len(df) < 3:
+            return df
+
+        original_len = len(df)
+
+        # 연속 close 비율 계산
+        df = df.sort_values("time").reset_index(drop=True)
+        close_ratio = df["close"] / df["close"].shift(1)
+
+        # 10배 이상 급변하는 행 마킹 (상승 또는 하락)
+        anomaly_mask = (close_ratio > 10) | (close_ratio < 0.1)
+        # 첫 행은 비교 불가이므로 제외
+        anomaly_mask.iloc[0] = False
+
+        anomaly_count = anomaly_mask.sum()
+        if anomaly_count > 0:
+            # 이상치 행의 인접 행도 함께 제거 (연속 이상 구간)
+            # 이상치 시작점 찾기
+            anomaly_indices = df.index[anomaly_mask].tolist()
+
+            # 이상 구간: 이상치부터 다음 정상 복귀까지
+            to_remove = set()
+            for idx in anomaly_indices:
+                to_remove.add(idx)
+                # 이상치 이후 행도 체크 (다시 원래 가격대로 돌아오는 지점까지)
+                if idx + 1 < len(df):
+                    # 이전 정상 가격 (이상치 바로 전)
+                    normal_price = df.loc[max(0, idx - 1), "close"]
+                    for j in range(idx + 1, min(idx + 100, len(df))):
+                        ratio = df.loc[j, "close"] / normal_price
+                        if 0.1 < ratio < 10:
+                            break  # 정상 복귀
+                        to_remove.add(j)
+
+            df = df.drop(index=list(to_remove)).reset_index(drop=True)
+            logger.warning(
+                f"[{symbol}] 가격 이상치 {len(to_remove)}행 제거 "
+                f"(원본 {original_len}행 → {len(df)}행). "
+                f"다른 종목 데이터 혼입 가능성."
+            )
+
+        return df
+
     def upload_csv(
         self,
         csv_path: Path,
@@ -258,6 +374,27 @@ class DatabaseService:
             return 0
 
         logger.info(f"Parsed {len(df)} rows from {csv_path.name}")
+
+        # === 데이터 품질 검증 ===
+
+        # 1) _D 테이블 삽입 시 실제 타임프레임 검증
+        target_tf = self.get_table_name(symbol, timeframe).split("_")[-1]
+        if target_tf == "D":
+            detected_tf = self._detect_csv_timeframe(df)
+            if detected_tf != "D" and detected_tf != "unknown":
+                logger.warning(
+                    f"[{symbol}] 타임프레임 불일치: 대상={target_tf}, "
+                    f"감지={detected_tf}. intraday 데이터를 일봉으로 변환합니다."
+                )
+            # intraday 섞임 방지: 하루 1행만 유지
+            df = self._validate_csv_for_daily(df, symbol)
+
+        # 2) 가격 이상치 필터링 (다른 종목 데이터 혼입 감지)
+        df = self._validate_price_sanity(df, symbol)
+
+        if df.empty:
+            logger.warning(f"[{symbol}] 검증 후 데이터 없음. 업로드 스킵.")
+            return 0
 
         # Create table if needed
         self.create_table_if_not_exists(table_name)
