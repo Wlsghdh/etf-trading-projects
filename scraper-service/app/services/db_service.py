@@ -159,7 +159,7 @@ class DatabaseService:
             `volume` BIGINT,
             `rsi` DOUBLE,
             `macd` DOUBLE,
-            PRIMARY KEY (`time`)
+            PRIMARY KEY (`symbol`, `timeframe`, `time`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
 
@@ -407,10 +407,16 @@ class DatabaseService:
 
                 delete_sql = text(f"""
                     DELETE FROM `{table_name}`
-                    WHERE `time` >= :min_time AND `time` <= :max_time
+                    WHERE `symbol` = :symbol AND `timeframe` = :timeframe
+                      AND `time` >= :min_time AND `time` <= :max_time
                 """)
                 result = conn.execute(
-                    delete_sql, {"min_time": min_time, "max_time": max_time}
+                    delete_sql, {
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "min_time": min_time,
+                        "max_time": max_time,
+                    }
                 )
                 deleted = result.rowcount
                 if deleted > 0:
