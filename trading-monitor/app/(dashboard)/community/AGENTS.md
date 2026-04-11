@@ -5,7 +5,7 @@
 ## 디렉토리 역할
 
 - **경로**: `trading-monitor/app/(dashboard)/community/`
-- **URL**: `/community` (dashboard 레이아웃 적용)
+- **URL**: `/community` (dashboard 레이웃 적용)
 - **렌더링**: Client Component (`'use client'`)
 
 ## 주요 파일
@@ -78,3 +78,4 @@ interface Comment {
 - [ ] 이미지 별도 스토리지(S3 등) 분리
 - [ ] 페이지네이션 / 무한 스크롤
 - [ ] 게시글 수정 기능
+
