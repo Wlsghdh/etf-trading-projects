@@ -252,13 +252,13 @@ function MarketDataPanel({ data }: { data: MarketData | null }) {
 
   if (data.indices.sp500) items.push({
     label: 'S&P 500',
-    value: data.indices.sp500.value.toLocaleString(undefined, { maximumFractionDigits: 0 }),
+    value: ((data.indices.sp500 as any).value ?? (data.indices.sp500 as any).price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 }),
     sub: `${pf(data.indices.sp500.change)}%`,
     color: data.indices.sp500.change >= 0 ? 'text-green-500' : 'text-red-500',
   });
   if (data.indices.nasdaq) items.push({
     label: 'NASDAQ',
-    value: data.indices.nasdaq.value.toLocaleString(undefined, { maximumFractionDigits: 0 }),
+    value: ((data.indices.nasdaq as any).value ?? (data.indices.nasdaq as any).price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 }),
     sub: `${pf(data.indices.nasdaq.change)}%`,
     color: data.indices.nasdaq.change >= 0 ? 'text-green-500' : 'text-red-500',
   });
@@ -294,7 +294,7 @@ function MarketDataPanel({ data }: { data: MarketData | null }) {
   });
   if (data.indices.dow) items.push({
     label: 'DOW',
-    value: data.indices.dow.value.toLocaleString(undefined, { maximumFractionDigits: 0 }),
+    value: ((data.indices.dow as any).value ?? (data.indices.dow as any).price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 }),
     sub: `${pf(data.indices.dow.change)}%`,
     color: data.indices.dow.change >= 0 ? 'text-green-500' : 'text-red-500',
   });
