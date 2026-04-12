@@ -15,15 +15,25 @@ import {
   PencilEdit02Icon,
   Cancel01Icon,
   Image02Icon,
+  ThumbsUpIcon,
+  ThumbsDownIcon,
+  ArrowTurnBackwardIcon,
+  Alert02Icon,
+  ArrowDown01Icon,
+  ArrowUp01Icon,
 } from '@hugeicons/core-free-icons';
 
 // ── Types ──
+
+type SortMode = 'latest' | 'popular' | 'comments';
 
 interface Comment {
   id: string;
   author: string;
   content: string;
   createdAt: string;
+  parentId?: string;
+  mentions?: string[];
 }
 
 interface Post {
@@ -33,7 +43,10 @@ interface Post {
   image?: string;
   ticker?: string;
   likes: string[];
+  dislikes: string[];
   comments: Comment[];
+  reports: { user: string; reason: string; createdAt: string }[];
+  hidden?: boolean;
   createdAt: string;
 }
 
@@ -41,11 +54,15 @@ interface Post {
 
 const API = '/trading/api/community';
 
-async function apiGetPosts(): Promise<Post[]> {
-  const res = await fetch(API, { cache: 'no-store' });
+async function apiGetPosts(sort: SortMode = 'latest'): Promise<Post[]> {
+  const res = await fetch(`${API}?sort=${sort}`, { cache: 'no-store' });
   if (!res.ok) return [];
   const data = await res.json();
-  return data.posts || [];
+  return (data.posts || []).map((p: Partial<Post>) => ({
+    ...p,
+    dislikes: p.dislikes || [],
+    reports: p.reports || [],
+  }));
 }
 
 async function apiCreatePost(author: string, content: string, image?: string, ticker?: string): Promise<Post | null> {
@@ -56,7 +73,8 @@ async function apiCreatePost(author: string, content: string, image?: string, ti
   });
   if (!res.ok) return null;
   const data = await res.json();
-  return data.post;
+  const post = data.post;
+  return { ...post, dislikes: post.dislikes || [], reports: post.reports || [] };
 }
 
 async function apiLike(postId: string, user: string) {
@@ -67,11 +85,19 @@ async function apiLike(postId: string, user: string) {
   });
 }
 
-async function apiComment(postId: string, user: string, text: string) {
+async function apiDislike(postId: string, user: string) {
   await fetch(API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'comment', postId, user, text }),
+    body: JSON.stringify({ action: 'dislike', postId, user }),
+  });
+}
+
+async function apiComment(postId: string, user: string, text: string, parentId?: string) {
+  await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'comment', postId, user, text, parentId }),
   });
 }
 
@@ -80,6 +106,14 @@ async function apiDelete(postId: string, user: string) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'delete', postId, user }),
+  });
+}
+
+async function apiReport(postId: string, user: string, reason: string) {
+  await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'report', postId, user, reason }),
   });
 }
 
@@ -101,6 +135,31 @@ function timeAgo(d: string): string {
   if (days < 7) return `${days}일 전`;
   return new Date(d).toLocaleDateString('ko-KR');
 }
+
+function getUserRole(): string {
+  if (typeof document === 'undefined') return 'user';
+  const match = document.cookie.match(/(^| )user-role=([^;]+)/);
+  return match ? decodeURIComponent(match[2]) : 'user';
+}
+
+/** Render comment text with @mentions highlighted */
+function renderMentions(text: string) {
+  const parts = text.split(/(@\w+)/g);
+  return parts.map((part, i) =>
+    part.startsWith('@') ? (
+      <span key={i} className="font-semibold text-blue-500">{part}</span>
+    ) : (
+      <span key={i}>{part}</span>
+    )
+  );
+}
+
+// ── 정렬 탭 ──
+const SORT_TABS: { key: SortMode; label: string }[] = [
+  { key: 'latest', label: '최신순' },
+  { key: 'popular', label: '인기순' },
+  { key: 'comments', label: '댓글 많은 순' },
+];
 
 // ── 게시글 작성 모달 ──
 function WriteModal({ user, onPost, onClose }: {
@@ -180,16 +239,88 @@ function WriteModal({ user, onPost, onClose }: {
   );
 }
 
+// ── 댓글 아이템 (재귀 nested replies) ──
+function CommentItem({ comment, allComments, user, postId, onComment }: {
+  comment: Comment;
+  allComments: Comment[];
+  user: string;
+  postId: string;
+  onComment: (id: string, text: string, parentId?: string) => void;
+}) {
+  const [replyText, setReplyText] = useState('');
+  const [showReply, setShowReply] = useState(false);
+  const replies = allComments.filter(c => c.parentId === comment.id);
+
+  const handleReply = () => {
+    setShowReply(true);
+    setReplyText(`@${comment.author} `);
+  };
+
+  const submitReply = () => {
+    if (!replyText.trim()) return;
+    onComment(postId, replyText.trim(), comment.id);
+    setReplyText('');
+    setShowReply(false);
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex gap-2 text-sm">
+        <span className="shrink-0 font-semibold">{comment.author}</span>
+        <span className="flex-1">{renderMentions(comment.content)}</span>
+        <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(comment.createdAt)}</span>
+      </div>
+      <div className="flex items-center gap-3 pl-0">
+        <button onClick={handleReply} className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+          <HugeiconsIcon icon={ArrowTurnBackwardIcon} className="h-3 w-3" strokeWidth={2} />
+          답글
+        </button>
+        {replies.length > 0 && (
+          <span className="text-[11px] text-muted-foreground">답글 {replies.length}개</span>
+        )}
+      </div>
+      {showReply && (
+        <div className="flex gap-2 pt-1 pl-4">
+          <input
+            value={replyText}
+            onChange={e => setReplyText(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') submitReply(); }}
+            autoFocus
+            placeholder="답글 입력..."
+            className="flex-1 rounded border border-border bg-background px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary/50"
+          />
+          <Button size="icon-xs" disabled={!replyText.trim()} onClick={submitReply}>
+            <HugeiconsIcon icon={SentIcon} className="h-3 w-3" strokeWidth={2} />
+          </Button>
+          <button onClick={() => setShowReply(false)} className="text-xs text-muted-foreground hover:text-foreground">취소</button>
+        </div>
+      )}
+      {replies.length > 0 && (
+        <div className="ml-5 space-y-1.5 border-l-2 border-border pl-3">
+          {replies.map(r => (
+            <CommentItem key={r.id} comment={r} allComments={allComments} user={user} postId={postId} onComment={onComment} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── 게시글 카드 ──
-function PostCard({ post, user, onLike, onComment, onDelete }: {
-  post: Post; user: string;
+function PostCard({ post, user, userRole, onLike, onDislike, onComment, onDelete, onReport }: {
+  post: Post; user: string; userRole: string;
   onLike: (id: string) => void;
-  onComment: (id: string, text: string) => void;
+  onDislike: (id: string) => void;
+  onComment: (id: string, text: string, parentId?: string) => void;
   onDelete: (id: string) => void;
+  onReport: (id: string) => void;
 }) {
   const [commentText, setCommentText] = useState('');
   const [showComments, setShowComments] = useState(false);
-  const liked = post.likes.includes(user);
+  const upvoted = post.likes.includes(user);
+  const downvoted = post.dislikes.includes(user);
+  const netScore = post.likes.length - post.dislikes.length;
+  const topLevelComments = post.comments.filter(c => !c.parentId);
 
   return (
     <Card size="sm">
@@ -207,11 +338,25 @@ function PostCard({ post, user, onLike, onComment, onDelete }: {
               <span className="text-[11px] text-muted-foreground">{timeAgo(post.createdAt)}</span>
             </div>
           </div>
-          {post.author === user && (
-            <button onClick={() => onDelete(post.id)} className="text-muted-foreground hover:text-red-500 transition-colors">
-              <HugeiconsIcon icon={Delete02Icon} className="h-4 w-4" strokeWidth={2} />
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {post.author !== user && (
+              <button
+                onClick={() => onReport(post.id)}
+                className="text-muted-foreground hover:text-orange-500 transition-colors"
+                title="신고"
+              >
+                <HugeiconsIcon icon={Alert02Icon} className="h-4 w-4" strokeWidth={2} />
+              </button>
+            )}
+            {userRole === 'admin' && post.reports.length > 0 && (
+              <Badge variant="destructive" className="text-[10px]">신고 {post.reports.length}</Badge>
+            )}
+            {post.author === user && (
+              <button onClick={() => onDelete(post.id)} className="text-muted-foreground hover:text-red-500 transition-colors">
+                <HugeiconsIcon icon={Delete02Icon} className="h-4 w-4" strokeWidth={2} />
+              </button>
+            )}
+          </div>
         </div>
 
         <p className="text-sm whitespace-pre-wrap leading-relaxed">{post.content}</p>
@@ -223,13 +368,24 @@ function PostCard({ post, user, onLike, onComment, onDelete }: {
         )}
 
         <div className="flex items-center gap-5 border-t border-border pt-2.5">
-          <button
-            onClick={() => onLike(post.id)}
-            className={`flex items-center gap-1.5 text-sm transition-colors ${liked ? 'text-red-500' : 'text-muted-foreground hover:text-red-500'}`}
-          >
-            <HugeiconsIcon icon={FavouriteIcon} className="h-5 w-5" strokeWidth={liked ? 3 : 2} />
-            <span>{post.likes.length > 0 ? post.likes.length : ''}</span>
-          </button>
+          {/* Upvote / Downvote */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => onLike(post.id)}
+              className={`flex items-center gap-1 text-sm transition-colors ${upvoted ? 'text-green-500' : 'text-muted-foreground hover:text-green-500'}`}
+            >
+              <HugeiconsIcon icon={ThumbsUpIcon} className="h-5 w-5" strokeWidth={upvoted ? 3 : 2} />
+            </button>
+            <span className={`min-w-[1.5rem] text-center text-sm font-medium ${netScore > 0 ? 'text-green-500' : netScore < 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+              {netScore !== 0 ? netScore : ''}
+            </span>
+            <button
+              onClick={() => onDislike(post.id)}
+              className={`flex items-center gap-1 text-sm transition-colors ${downvoted ? 'text-red-500' : 'text-muted-foreground hover:text-red-500'}`}
+            >
+              <HugeiconsIcon icon={ThumbsDownIcon} className="h-5 w-5" strokeWidth={downvoted ? 3 : 2} />
+            </button>
+          </div>
           <button
             onClick={() => setShowComments(!showComments)}
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -241,13 +397,9 @@ function PostCard({ post, user, onLike, onComment, onDelete }: {
 
         {showComments && (
           <div className="space-y-2 border-t border-border pt-2">
-            {post.comments.length === 0 && <p className="text-xs text-muted-foreground">댓글이 없습니다</p>}
-            {post.comments.map(c => (
-              <div key={c.id} className="flex gap-2 text-sm">
-                <span className="shrink-0 font-semibold">{c.author}</span>
-                <span className="flex-1">{c.content}</span>
-                <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(c.createdAt)}</span>
-              </div>
+            {topLevelComments.length === 0 && <p className="text-xs text-muted-foreground">댓글이 없습니다</p>}
+            {topLevelComments.map(c => (
+              <CommentItem key={c.id} comment={c} allComments={post.comments} user={user} postId={post.id} onComment={onComment} />
             ))}
             <div className="flex gap-2 pt-1">
               <input
@@ -281,19 +433,29 @@ function PostCard({ post, user, onLike, onComment, onDelete }: {
 export default function CommunityPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [user, setUser] = useState('User');
+  const [userRole, setUserRole] = useState('user');
   const [showWrite, setShowWrite] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sort, setSort] = useState<SortMode>('latest');
 
-  const loadData = async () => {
-    const p = await apiGetPosts();
+  const loadData = async (sortMode: SortMode = sort) => {
+    const p = await apiGetPosts(sortMode);
     setPosts(p);
     setLoading(false);
   };
 
   useEffect(() => {
     setUser(getUser());
+    setUserRole(getUserRole());
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleSortChange = (newSort: SortMode) => {
+    setSort(newSort);
+    setLoading(true);
+    loadData(newSort);
+  };
 
   const handlePost = async (content: string, image?: string, ticker?: string) => {
     const post = await apiCreatePost(user, content, image, ticker);
@@ -301,25 +463,54 @@ export default function CommunityPage() {
   };
 
   const handleLike = async (id: string) => {
-    // 즉시 UI 업데이트
+    // Optimistic update: toggle like, remove dislike if active
     setPosts(prev => prev.map(p => {
       if (p.id !== id) return p;
       const liked = p.likes.includes(user);
-      return { ...p, likes: liked ? p.likes.filter(u => u !== user) : [...p.likes, user] };
+      return {
+        ...p,
+        likes: liked ? p.likes.filter(u => u !== user) : [...p.likes, user],
+        dislikes: p.dislikes.filter(u => u !== user), // remove dislike
+      };
     }));
     await apiLike(id, user);
   };
 
-  const handleComment = async (id: string, text: string) => {
-    const tempComment: Comment = { id: 'temp', author: user, content: text, createdAt: new Date().toISOString() };
+  const handleDislike = async (id: string) => {
+    // Optimistic update: toggle dislike, remove like if active
+    setPosts(prev => prev.map(p => {
+      if (p.id !== id) return p;
+      const disliked = p.dislikes.includes(user);
+      return {
+        ...p,
+        dislikes: disliked ? p.dislikes.filter(u => u !== user) : [...p.dislikes, user],
+        likes: p.likes.filter(u => u !== user), // remove like
+      };
+    }));
+    await apiDislike(id, user);
+  };
+
+  const handleComment = async (id: string, text: string, parentId?: string) => {
+    const tempComment: Comment = { id: `temp-${Date.now()}`, author: user, content: text, createdAt: new Date().toISOString(), parentId };
     setPosts(prev => prev.map(p => p.id === id ? { ...p, comments: [...p.comments, tempComment] } : p));
-    await apiComment(id, user, text);
+    await apiComment(id, user, text, parentId);
     loadData(); // 서버 데이터 동기화
   };
 
   const handleDelete = async (id: string) => {
     setPosts(prev => prev.filter(p => p.id !== id));
     await apiDelete(id, user);
+  };
+
+  const handleReport = async (id: string) => {
+    if (!confirm('이 게시물을 신고하시겠습니까?')) return;
+    // Optimistic update
+    setPosts(prev => prev.map(p => {
+      if (p.id !== id) return p;
+      if (p.reports.some(r => r.user === user)) return p; // already reported
+      return { ...p, reports: [...p.reports, { user, reason: '사용자 신고', createdAt: new Date().toISOString() }] };
+    }));
+    await apiReport(id, user, '사용자 신고');
   };
 
   return (
@@ -341,6 +532,23 @@ export default function CommunityPage() {
         </div>
       </div>
 
+      {/* 정렬 탭 */}
+      <div className="flex gap-1 rounded-lg border border-border bg-muted/30 p-1">
+        {SORT_TABS.map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => handleSortChange(tab.key)}
+            className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              sort === tab.key
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {showWrite && <WriteModal user={user} onPost={handlePost} onClose={() => setShowWrite(false)} />}
 
       {loading ? (
@@ -356,7 +564,17 @@ export default function CommunityPage() {
       ) : (
         <div className="space-y-4">
           {posts.map(post => (
-            <PostCard key={post.id} post={post} user={user} onLike={handleLike} onComment={handleComment} onDelete={handleDelete} />
+            <PostCard
+              key={post.id}
+              post={post}
+              user={user}
+              userRole={userRole}
+              onLike={handleLike}
+              onDislike={handleDislike}
+              onComment={handleComment}
+              onDelete={handleDelete}
+              onReport={handleReport}
+            />
           ))}
         </div>
       )}
