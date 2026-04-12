@@ -13,15 +13,69 @@ import {
   ArrowLeft02Icon,
 } from '@hugeicons/core-free-icons';
 
+// ── Types ── (Favorites)
+
+interface FavoriteItem {
+  symbol: string;
+  addedAt: string;       // ISO date string
+  priceWhenAdded?: number;
+  note?: string;
+}
+
 // ── LocalStorage ──
 
 const FAVORITES_KEY = 'stock_favorites';
+const FAVORITES_V2_KEY = 'stock_favorites_v2';
 
-function loadFavorites(): string[] {
+/** Migrate old string[] format to FavoriteItem[] */
+function migrateFavorites(): FavoriteItem[] {
   if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]'); } catch { return []; }
+  try {
+    const v2 = localStorage.getItem(FAVORITES_V2_KEY);
+    if (v2) return JSON.parse(v2);
+
+    // Migrate from old format
+    const old = localStorage.getItem(FAVORITES_KEY);
+    if (old) {
+      const parsed = JSON.parse(old);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        if (typeof parsed[0] === 'string') {
+          // Old string[] format -> migrate
+          const migrated: FavoriteItem[] = parsed.map((sym: string) => ({
+            symbol: sym,
+            addedAt: new Date().toISOString(),
+          }));
+          localStorage.setItem(FAVORITES_V2_KEY, JSON.stringify(migrated));
+          return migrated;
+        }
+      }
+    }
+    return [];
+  } catch { return []; }
 }
-function saveFavorites(favs: string[]) { localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs)); }
+
+function loadFavoritesV2(): FavoriteItem[] {
+  return migrateFavorites();
+}
+function saveFavoritesV2(favs: FavoriteItem[]) {
+  localStorage.setItem(FAVORITES_V2_KEY, JSON.stringify(favs));
+  // Also keep old key in sync for any code that reads it
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs.map(f => f.symbol)));
+}
+
+/** Fetch current price for a symbol */
+async function fetchCurrentPrice(symbol: string): Promise<number | undefined> {
+  try {
+    const res = await fetch(`/trading/api/data/${symbol}?timeframe=D&limit=1`, { cache: 'no-store' });
+    if (!res.ok) return undefined;
+    const data = await res.json();
+    const items = data.data;
+    if (Array.isArray(items) && items.length > 0) {
+      return items[items.length - 1].close;
+    }
+    return undefined;
+  } catch { return undefined; }
+}
 
 function getUser(): string {
   if (typeof document === 'undefined') return 'User';
@@ -656,7 +710,10 @@ type SideTab = 'news' | 'overview' | 'screener' | 'events';
 
 // ── 메인 ──
 export default function StocksPage() {
-  const [favorites, setFavorites] = useState<string[]>([]);
+  const [favoritesV2, setFavoritesV2] = useState<FavoriteItem[]>([]);
+  const [currentPrices, setCurrentPrices] = useState<Record<string, number>>({});
+  const [noteInput, setNoteInput] = useState<Record<string, string>>({});
+  const [editingNote, setEditingNote] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [activeSymbol, setActiveSymbol] = useState<string | null>(null);
   const [showFavorites, setShowFavorites] = useState(false);
@@ -664,17 +721,75 @@ export default function StocksPage() {
   const [sideTab, setSideTab] = useState<SideTab>('news');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Derived: simple symbol list for backward compat checks
+  const favorites = favoritesV2.map(f => f.symbol);
+
   useEffect(() => {
-    setFavorites(loadFavorites());
+    setFavoritesV2(loadFavoritesV2());
     setUser(getUser());
   }, []);
 
-  const toggleFav = useCallback((sym: string) => {
-    setFavorites(prev => {
-      const next = prev.includes(sym) ? prev.filter(s => s !== sym) : [...prev, sym];
-      saveFavorites(next);
+  // Fetch current prices for all favorites
+  useEffect(() => {
+    if (favoritesV2.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const prices: Record<string, number> = {};
+      await Promise.all(
+        favoritesV2.map(async (fav) => {
+          const price = await fetchCurrentPrice(fav.symbol);
+          if (price !== undefined) prices[fav.symbol] = price;
+        })
+      );
+      if (!cancelled) setCurrentPrices(prices);
+    })();
+    return () => { cancelled = true; };
+  }, [favoritesV2]);
+
+  const toggleFav = useCallback(async (sym: string) => {
+    setFavoritesV2(prev => {
+      const exists = prev.find(f => f.symbol === sym);
+      if (exists) {
+        const next = prev.filter(f => f.symbol !== sym);
+        saveFavoritesV2(next);
+        return next;
+      }
+      // Will be updated with price async below
+      const newItem: FavoriteItem = {
+        symbol: sym,
+        addedAt: new Date().toISOString(),
+      };
+      const next = [...prev, newItem];
+      saveFavoritesV2(next);
+
+      // Fetch price async and update
+      fetchCurrentPrice(sym).then(price => {
+        if (price !== undefined) {
+          setFavoritesV2(current => {
+            const updated = current.map(f =>
+              f.symbol === sym && !f.priceWhenAdded
+                ? { ...f, priceWhenAdded: price }
+                : f
+            );
+            saveFavoritesV2(updated);
+            return updated;
+          });
+        }
+      });
+
       return next;
     });
+  }, []);
+
+  const updateFavNote = useCallback((sym: string, note: string) => {
+    setFavoritesV2(prev => {
+      const updated = prev.map(f =>
+        f.symbol === sym ? { ...f, note: note.trim() || undefined } : f
+      );
+      saveFavoritesV2(updated);
+      return updated;
+    });
+    setEditingNote(null);
   }, []);
 
   const handleSearch = () => {
@@ -781,7 +896,7 @@ export default function StocksPage() {
           className={showFavorites ? 'bg-red-500 hover:bg-red-600 text-white' : ''}
         >
           <HugeiconsIcon icon={FavouriteIcon} className="mr-1 h-3.5 w-3.5" strokeWidth={showFavorites ? 3 : 2} />
-          관심종목 ({favorites.length})
+          관심종목 ({favoritesV2.length})
         </Button>
       </div>
 
@@ -795,29 +910,96 @@ export default function StocksPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {favorites.length === 0 ? (
+            {favoritesV2.length === 0 ? (
               <p className="py-4 text-center text-sm text-muted-foreground">
                 종목 검색 후 하트를 눌러 관심종목을 추가하세요
               </p>
             ) : (
-              <div className="flex flex-wrap gap-2">
-                {favorites.map(sym => (
-                  <Button
-                    key={sym}
-                    variant="outline"
-                    size="sm"
-                    onClick={() => { setActiveSymbol(sym); setShowFavorites(false); }}
-                    className="gap-1.5"
-                  >
-                    <span className="font-mono font-bold">{sym}</span>
-                    <button
-                      onClick={e => { e.stopPropagation(); toggleFav(sym); }}
-                      className="text-red-500 hover:text-red-700"
+              <div className="space-y-2">
+                {favoritesV2.map(fav => {
+                  const cur = currentPrices[fav.symbol];
+                  const added = fav.priceWhenAdded;
+                  const change = added && cur ? ((cur - added) / added) * 100 : undefined;
+
+                  return (
+                    <div
+                      key={fav.symbol}
+                      className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 hover:bg-muted/40 transition-colors cursor-pointer"
+                      onClick={() => { setActiveSymbol(fav.symbol); setShowFavorites(false); }}
                     >
-                      <HugeiconsIcon icon={Cancel01Icon} className="h-3 w-3" strokeWidth={2} />
-                    </button>
-                  </Button>
-                ))}
+                      {/* Symbol */}
+                      <span className="font-mono font-bold text-sm min-w-[56px]">{fav.symbol}</span>
+
+                      {/* Price info */}
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        {added !== undefined && (
+                          <span title="관심종목 추가 시 가격">
+                            추가가 <span className="font-mono text-foreground">${added.toFixed(2)}</span>
+                          </span>
+                        )}
+                        {cur !== undefined && (
+                          <span title="현재 가격">
+                            현재 <span className="font-mono text-foreground">${cur.toFixed(2)}</span>
+                          </span>
+                        )}
+                        {change !== undefined && (
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] font-mono ${
+                              change > 0 ? 'text-green-500 border-green-500/40' :
+                              change < 0 ? 'text-red-500 border-red-500/40' :
+                              'text-muted-foreground'
+                            }`}
+                          >
+                            {change > 0 ? '+' : ''}{change.toFixed(2)}%
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Added date */}
+                      <span className="ml-auto text-[10px] text-muted-foreground shrink-0" title={new Date(fav.addedAt).toLocaleString('ko-KR')}>
+                        {new Date(fav.addedAt).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })} 추가
+                      </span>
+
+                      {/* Note */}
+                      {editingNote === fav.symbol ? (
+                        <input
+                          autoFocus
+                          className="w-32 rounded border border-border bg-background px-1.5 py-0.5 text-xs outline-none focus:ring-1 focus:ring-primary/50"
+                          placeholder="메모 입력..."
+                          value={noteInput[fav.symbol] ?? fav.note ?? ''}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => setNoteInput(prev => ({ ...prev, [fav.symbol]: e.target.value }))}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') updateFavNote(fav.symbol, noteInput[fav.symbol] ?? fav.note ?? '');
+                            if (e.key === 'Escape') setEditingNote(null);
+                          }}
+                          onBlur={() => updateFavNote(fav.symbol, noteInput[fav.symbol] ?? fav.note ?? '')}
+                        />
+                      ) : (
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            setEditingNote(fav.symbol);
+                            setNoteInput(prev => ({ ...prev, [fav.symbol]: fav.note ?? '' }));
+                          }}
+                          className="text-[10px] text-muted-foreground hover:text-foreground truncate max-w-[120px]"
+                          title={fav.note || '메모 추가'}
+                        >
+                          {fav.note || '+ 메모'}
+                        </button>
+                      )}
+
+                      {/* Remove button */}
+                      <button
+                        onClick={e => { e.stopPropagation(); toggleFav(fav.symbol); }}
+                        className="text-red-500 hover:text-red-700 shrink-0"
+                      >
+                        <HugeiconsIcon icon={Cancel01Icon} className="h-3 w-3" strokeWidth={2} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>

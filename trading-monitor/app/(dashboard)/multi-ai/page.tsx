@@ -226,12 +226,23 @@ interface MarketData {
   exchangeRate: { usdKrw: number; change: number } | null;
   vix: { value: number; change: number; label: string } | null;
   gold: { price: number; change: number } | null;
+  bitcoin: { price: number; change: number } | null;
+  crudeOil: { price: number; change: number } | null;
+  dollarIndex: { price: number; change: number } | null;
   rates: { fedRate: number | null; treasury10y: number | null };
   indices: {
     sp500: { value: number; change: number } | null;
     nasdaq: { value: number; change: number } | null;
     dow: { value: number; change: number } | null;
   };
+}
+
+interface NewsItem {
+  id: string;
+  title: string;
+  link: string;
+  source: string;
+  pubDate: string;
 }
 
 function MarketDataPanel({ data }: { data: MarketData | null }) {
@@ -287,9 +298,27 @@ function MarketDataPanel({ data }: { data: MarketData | null }) {
     sub: `${pf(data.indices.dow.change)}%`,
     color: data.indices.dow.change >= 0 ? 'text-green-500' : 'text-red-500',
   });
+  if (data.bitcoin) items.push({
+    label: 'Bitcoin',
+    value: `$${data.bitcoin.price.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+    sub: `${pf(data.bitcoin.change)}%`,
+    color: data.bitcoin.change >= 0 ? 'text-orange-400' : 'text-red-500',
+  });
+  if (data.crudeOil) items.push({
+    label: 'Crude Oil',
+    value: `$${data.crudeOil.price.toFixed(2)}`,
+    sub: `${pf(data.crudeOil.change)}%`,
+    color: data.crudeOil.change >= 0 ? 'text-green-500' : 'text-red-500',
+  });
+  if (data.dollarIndex) items.push({
+    label: 'Dollar Index',
+    value: data.dollarIndex.price.toFixed(2),
+    sub: `${pf(data.dollarIndex.change)}%`,
+    color: data.dollarIndex.change >= 0 ? 'text-green-500' : 'text-red-500',
+  });
 
   return (
-    <div className="grid grid-cols-4 lg:grid-cols-8 gap-2 mb-3">
+    <div className="grid grid-cols-4 lg:grid-cols-11 gap-2 mb-3">
       {items.map(item => (
         <div key={item.label} className="rounded-lg border border-border bg-card p-2 text-center">
           <div className="text-[9px] text-muted-foreground uppercase tracking-wider truncate">{item.label}</div>
@@ -297,6 +326,44 @@ function MarketDataPanel({ data }: { data: MarketData | null }) {
           <div className={`text-[10px] ${item.color} opacity-80`}>{item.sub}</div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ── 뉴스 티커 ──
+function NewsTicker({ items }: { items: NewsItem[] }) {
+  if (!items.length) return null;
+
+  const timeAgo = (dateStr: string) => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${mins}분 전`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}시간 전`;
+    return `${Math.floor(hrs / 24)}일 전`;
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2 mb-3">
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">최신 뉴스</span>
+        <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+      </div>
+      <div className="space-y-1">
+        {items.slice(0, 5).map((item) => (
+          <a
+            key={item.id}
+            href={item.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-baseline gap-2 group hover:bg-muted/30 rounded px-1 py-0.5 -mx-1 transition-colors"
+          >
+            <span className="text-[10px] text-muted-foreground shrink-0 w-14 text-right">{timeAgo(item.pubDate)}</span>
+            <span className="text-xs text-foreground/90 group-hover:text-foreground truncate">{item.title}</span>
+            <span className="text-[9px] text-muted-foreground/60 shrink-0">{item.source}</span>
+          </a>
+        ))}
+      </div>
     </div>
   );
 }
@@ -435,6 +502,7 @@ export default function MultiAIPage() {
   const [chartFullscreen, setChartFullscreen] = useState(false);
   const [sessionId, setSessionId] = useState('');
   const [marketData, setMarketData] = useState<MarketData | null>(null);
+  const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resizeRef = useRef<{ startY: number; startH: number } | null>(null);
@@ -462,11 +530,18 @@ export default function MultiAIPage() {
       .then(d => { if (d) setMarketData(d); })
       .catch(() => {});
     loadMarket();
+    // 뉴스 데이터 (10분마다 갱신)
+    const loadNews = () => fetch(`${API_PREFIX}/news?category=market`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.news) setNewsItems(d.news); })
+      .catch(() => {});
+    loadNews();
     const iv = setInterval(async () => {
       try { const b = await fetchBalance(); if (b) setBalance(b); } catch {}
     }, 30000);
     const mv = setInterval(loadMarket, 300000);
-    return () => { clearInterval(iv); clearInterval(mv); };
+    const nv = setInterval(loadNews, 600000);
+    return () => { clearInterval(iv); clearInterval(mv); clearInterval(nv); };
   }, []);
 
   // 차트 리사이즈 핸들러
@@ -739,6 +814,9 @@ export default function MultiAIPage() {
 
       {/* ── 시장 데이터 패널 ── */}
       <MarketDataPanel data={marketData} />
+
+      {/* ── 뉴스 티커 ── */}
+      <NewsTicker items={newsItems} />
 
       {/* ── 3x3 그리드 ── */}
       <div className="shrink-0">

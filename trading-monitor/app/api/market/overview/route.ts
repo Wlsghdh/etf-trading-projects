@@ -8,6 +8,9 @@ interface MarketOverview {
   exchangeRate: { usdKrw: number; change: number } | null;
   vix: { value: number; change: number; label: string } | null;
   gold: { price: number; change: number } | null;
+  bitcoin: { price: number; change: number } | null;
+  crudeOil: { price: number; change: number } | null;
+  dollarIndex: { price: number; change: number } | null;
   rates: {
     fedRate: number | null;
     treasury10y: number | null;
@@ -79,7 +82,7 @@ function vixLabel(v: number): string {
 }
 
 export async function GET() {
-  const [exchangeRate, vixQuote, goldQuote, sp500, nasdaq, dow, fedRate, treasury10y] =
+  const [exchangeRate, vixQuote, goldQuote, sp500, nasdaq, dow, fedRate, treasury10y, btcQuote, oilQuote, dxyQuote] =
     await Promise.allSettled([
       fetchExchangeRate(),
       fetchYahooQuote('^VIX'),
@@ -89,6 +92,9 @@ export async function GET() {
       fetchYahooQuote('^DJI'),
       fetchFredLatest('FEDFUNDS'),
       fetchFredLatest('DGS10'),
+      fetchYahooQuote('BTC-USD'),
+      fetchYahooQuote('CL=F'),
+      fetchYahooQuote('DX-Y.NYB'),
     ]);
 
   const v = (r: PromiseSettledResult<unknown>) =>
@@ -96,12 +102,19 @@ export async function GET() {
 
   const vixData = v(vixQuote) as { price: number; change: number } | null;
 
+  const btcData = v(btcQuote) as { price: number; change: number } | null;
+  const oilData = v(oilQuote) as { price: number; change: number } | null;
+  const dxyData = v(dxyQuote) as { price: number; change: number } | null;
+
   const overview: MarketOverview = {
     exchangeRate: v(exchangeRate) as MarketOverview['exchangeRate'],
     vix: vixData
       ? { value: vixData.price, change: vixData.change, label: vixLabel(vixData.price) }
       : null,
     gold: v(goldQuote) as MarketOverview['gold'],
+    bitcoin: btcData ? { price: btcData.price, change: btcData.change } : null,
+    crudeOil: oilData ? { price: oilData.price, change: oilData.change } : null,
+    dollarIndex: dxyData ? { price: dxyData.price, change: dxyData.change } : null,
     rates: {
       fedRate: v(fedRate) as number | null,
       treasury10y: v(treasury10y) as number | null,
