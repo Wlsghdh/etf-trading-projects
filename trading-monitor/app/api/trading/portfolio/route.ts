@@ -80,10 +80,36 @@ async function transformPortfolio(raw: Record<string, unknown>) {
 
   const transformedHoldings = holdings.map((h) => {
     const etfCode = (h.etf_code as string) || '';
-    const buyPrice = (h.price as number) || 0;
+    let buyPrice = (h.price as number) || 0;
     const quantity = (h.quantity as number) || 0;
 
     const currentPrice = prices[etfCode] || buyPrice;
+
+    // 매수가 이상치 보정: 매수가와 현재가의 차이가 3배 이상이면
+    // DB의 split 미보정 가격으로 매수된 것이므로, 현재가 기준으로 보정
+    if (buyPrice > 0 && currentPrice > 0) {
+      const ratio = currentPrice / buyPrice;
+      if (ratio > 3 || ratio < 0.33) {
+        // 가장 가까운 split 비율로 보정 (2:1, 3:1, 4:1, 5:1, 10:1 등)
+        const commonSplits = [2, 3, 4, 5, 7, 8, 10, 15, 20];
+        let bestSplit = 1;
+        let bestDiff = Infinity;
+        for (const s of commonSplits) {
+          // 매수가 * split = 현재가에 가까운지
+          const diff1 = Math.abs(buyPrice * s - currentPrice);
+          if (diff1 < bestDiff) { bestDiff = diff1; bestSplit = s; }
+          // 현재가 / split = 매수가에 가까운지 (역분할)
+          const diff2 = Math.abs(currentPrice / s - buyPrice);
+          if (diff2 < bestDiff) { bestDiff = diff2; bestSplit = 1 / s; }
+        }
+        // 보정된 매수가가 현재가의 ±50% 이내인지 확인
+        const adjustedBuy = buyPrice * (bestSplit > 1 ? bestSplit : 1 / bestSplit);
+        if (Math.abs(adjustedBuy - currentPrice) / currentPrice < 0.5) {
+          buyPrice = Number(adjustedBuy.toFixed(2));
+        }
+      }
+    }
+
     const profitLoss = (currentPrice - buyPrice) * quantity;
     const profitLossPercent = buyPrice > 0 ? ((currentPrice - buyPrice) / buyPrice) * 100 : 0;
 

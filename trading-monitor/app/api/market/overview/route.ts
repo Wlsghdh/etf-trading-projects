@@ -60,8 +60,9 @@ async function fetchYahooQuote(
     const data = (await fetchJSON(url)) as {
       chart: {
         result: {
-          meta: { regularMarketPrice: number; previousClose: number };
-          indicators: { quote: { close: number[] }[] };
+          meta: { regularMarketPrice: number; previousClose: number; chartPreviousClose: number };
+          indicators: { quote: { close: (number | null)[] }[] };
+          timestamp: number[];
         }[];
       };
     };
@@ -69,10 +70,18 @@ async function fetchYahooQuote(
     const meta = result?.meta;
     if (!meta) return null;
     const price = meta.regularMarketPrice;
-    const prev = meta.previousClose || price;
-    // 종가 배열에서 null 제거
-    const closes = result?.indicators?.quote?.[0]?.close?.filter((v: number | null) => v != null) ?? [];
-    return { price, change: ((price - prev) / prev) * 100, sparkline: closes };
+    const prev = meta.previousClose || meta.chartPreviousClose || price;
+
+    // 종가 배열에서 null 제거 + adjclose fallback
+    let closes: number[] = [];
+    const quote = result?.indicators?.quote?.[0];
+    if (quote?.close) {
+      closes = quote.close.filter((v): v is number => v != null && !isNaN(v));
+    }
+    // 데이터가 없으면 현재가로 단일 포인트
+    if (closes.length === 0 && price) closes = [price];
+
+    return { price, change: ((price - prev) / prev) * 100, sparkline: closes.length > 1 ? closes : undefined };
   } catch {
     return null;
   }

@@ -86,7 +86,7 @@ def _log_order(
 
 
 def _get_previous_close_prices(symbols: list[str]) -> dict[str, float]:
-    """전일 종가 조회 (원격 MySQL DB에서)"""
+    """전일 종가 조회 (원격 MySQL DB에서) - 일봉 데이터만 사용, 이상치 필터링"""
     prices = {}
     try:
         from sqlalchemy import create_engine
@@ -95,10 +95,21 @@ def _get_previous_close_prices(symbols: list[str]) -> dict[str, float]:
         with engine.connect() as conn:
             for sym in symbols:
                 try:
-                    r = conn.execute(text(f"SELECT close FROM `{sym}_D` ORDER BY time DESC LIMIT 1"))
-                    row = r.fetchone()
-                    if row:
-                        prices[sym] = float(row[0])
+                    # 최근 5일 데이터를 가져와서 이상치 필터링
+                    r = conn.execute(text(
+                        f"SELECT close, time FROM `{sym}_D` "
+                        f"WHERE DATE(time) = time "  # 시간 부분이 00:00:00인 행만 (일봉)
+                        f"ORDER BY time DESC LIMIT 5"
+                    ))
+                    rows = r.fetchall()
+                    if rows:
+                        # 최근 종가들의 중앙값 기준으로 이상치 제거
+                        closes = [float(row[0]) for row in rows if row[0]]
+                        if closes:
+                            median = sorted(closes)[len(closes) // 2]
+                            # 중앙값 대비 3배 이상 차이나는 값은 제외
+                            valid = [c for c in closes if 0.33 * median < c < 3 * median]
+                            prices[sym] = valid[0] if valid else closes[0]
                 except Exception:
                     pass
         engine.dispose()
