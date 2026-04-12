@@ -136,6 +136,325 @@ function ScenarioChart({ scenarios, startPrice }: { scenarios: Scenario[]; start
   );
 }
 
+// ── 가상 매매 ──
+
+interface VirtualHolding {
+  symbol: string;
+  quantity: number;
+  avgPrice: number;
+}
+
+interface VirtualTrade {
+  timestamp: string;
+  action: 'BUY' | 'SELL';
+  symbol: string;
+  quantity: number;
+  price: number;
+}
+
+interface VirtualPortfolio {
+  cash: number;
+  initialCapital: number;
+  holdings: VirtualHolding[];
+  trades: VirtualTrade[];
+}
+
+const VIRTUAL_STORAGE_KEY = 'virtual_portfolio';
+
+function loadPortfolio(): VirtualPortfolio {
+  if (typeof window === 'undefined') return { cash: 10000, initialCapital: 10000, holdings: [], trades: [] };
+  try {
+    const raw = localStorage.getItem(VIRTUAL_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { cash: 10000, initialCapital: 10000, holdings: [], trades: [] };
+}
+
+function savePortfolio(p: VirtualPortfolio) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(VIRTUAL_STORAGE_KEY, JSON.stringify(p));
+}
+
+function VirtualTradingTab({ symbol }: { symbol: string }) {
+  const [portfolio, setPortfolio] = useState<VirtualPortfolio>(loadPortfolio);
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null);
+  const [quantity, setQuantity] = useState('');
+  const [capitalInput, setCapitalInput] = useState('');
+  const [loadingPrice, setLoadingPrice] = useState(false);
+
+  // 현재 가격 가져오기
+  const fetchPrice = useCallback(async () => {
+    setLoadingPrice(true);
+    try {
+      const res = await fetch(`/trading/api/data/${symbol}?timeframe=D&limit=1`, { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        const items = data.data || [];
+        if (items.length > 0) setCurrentPrice(items[items.length - 1].close);
+      }
+    } catch { /* ignore */ }
+    setLoadingPrice(false);
+  }, [symbol]);
+
+  useEffect(() => { fetchPrice(); }, [fetchPrice]);
+
+  const updatePortfolio = (p: VirtualPortfolio) => {
+    setPortfolio(p);
+    savePortfolio(p);
+  };
+
+  const handleResetCapital = () => {
+    const cap = parseFloat(capitalInput) || 10000;
+    const p: VirtualPortfolio = { cash: cap, initialCapital: cap, holdings: [], trades: [] };
+    updatePortfolio(p);
+    setCapitalInput('');
+  };
+
+  const handleTrade = (action: 'BUY' | 'SELL') => {
+    if (!currentPrice || !quantity) return;
+    const qty = parseInt(quantity);
+    if (isNaN(qty) || qty <= 0) return;
+
+    const p = { ...portfolio, holdings: [...portfolio.holdings], trades: [...portfolio.trades] };
+    const totalCost = currentPrice * qty;
+
+    if (action === 'BUY') {
+      if (totalCost > p.cash) return; // 잔고 부족
+      p.cash -= totalCost;
+      const existing = p.holdings.find(h => h.symbol === symbol);
+      if (existing) {
+        const newQty = existing.quantity + qty;
+        existing.avgPrice = (existing.avgPrice * existing.quantity + totalCost) / newQty;
+        existing.quantity = newQty;
+      } else {
+        p.holdings.push({ symbol, quantity: qty, avgPrice: currentPrice });
+      }
+    } else {
+      const existing = p.holdings.find(h => h.symbol === symbol);
+      if (!existing || existing.quantity < qty) return; // 보유 부족
+      p.cash += totalCost;
+      existing.quantity -= qty;
+      if (existing.quantity === 0) {
+        p.holdings = p.holdings.filter(h => h.symbol !== symbol);
+      }
+    }
+
+    p.trades.push({
+      timestamp: new Date().toISOString(),
+      action,
+      symbol,
+      quantity: qty,
+      price: currentPrice,
+    });
+
+    updatePortfolio(p);
+    setQuantity('');
+  };
+
+  // 포트폴리오 가치 계산
+  const holdingsValue = portfolio.holdings.reduce((sum, h) => {
+    const price = h.symbol === symbol && currentPrice ? currentPrice : h.avgPrice;
+    return sum + h.quantity * price;
+  }, 0);
+  const totalValue = portfolio.cash + holdingsValue;
+  const returnPct = portfolio.initialCapital > 0
+    ? ((totalValue - portfolio.initialCapital) / portfolio.initialCapital) * 100
+    : 0;
+
+  return (
+    <div className="flex flex-1 min-h-0 gap-4">
+      {/* 좌: 매매 패널 */}
+      <div className="w-80 shrink-0 space-y-3 overflow-y-auto">
+        {/* 초기 자본 설정 */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">초기 자본 설정</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex gap-2">
+              <input
+                type="number"
+                value={capitalInput}
+                onChange={e => setCapitalInput(e.target.value)}
+                placeholder="10000"
+                className="flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary/50"
+              />
+              <Button variant="outline" size="sm" onClick={handleResetCapital}>
+                초기화
+              </Button>
+            </div>
+            <p className="text-[10px] text-muted-foreground">포트폴리오를 리셋하고 새 자본으로 시작합니다</p>
+          </CardContent>
+        </Card>
+
+        {/* 현재가 + 주문 */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              {symbol} 주문
+              {loadingPrice && <span className="text-[10px] text-muted-foreground">가격 로딩...</span>}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">현재가</span>
+              <span className="font-mono font-bold text-base">
+                {currentPrice ? `$${currentPrice.toFixed(2)}` : '-'}
+              </span>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">수량</label>
+              <input
+                type="number"
+                value={quantity}
+                onChange={e => setQuantity(e.target.value)}
+                placeholder="0"
+                min="1"
+                className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary/50 mt-1"
+              />
+              {currentPrice && quantity && parseInt(quantity) > 0 && (
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  예상 금액: ${(currentPrice * parseInt(quantity)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white gap-1"
+                onClick={() => handleTrade('BUY')}
+                disabled={!currentPrice || !quantity}
+              >
+                <HugeiconsIcon icon={ArrowUp01Icon} className="h-3.5 w-3.5" strokeWidth={2} />
+                매수
+              </Button>
+              <Button
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white gap-1"
+                variant="destructive"
+                onClick={() => handleTrade('SELL')}
+                disabled={!currentPrice || !quantity}
+              >
+                <HugeiconsIcon icon={ArrowDown01Icon} className="h-3.5 w-3.5" strokeWidth={2} />
+                매도
+              </Button>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              잔고: ${portfolio.cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* 포트폴리오 요약 */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">포트폴리오 요약</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <span className="text-muted-foreground">초기 자본</span>
+                <div className="font-mono font-semibold">${portfolio.initialCapital.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">현금</span>
+                <div className="font-mono font-semibold">${portfolio.cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">보유 주식 가치</span>
+                <div className="font-mono font-semibold">${holdingsValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">총 자산</span>
+                <div className="font-mono font-bold">${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              </div>
+            </div>
+            <div className="mt-2 pt-2 border-t border-border flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">수익률</span>
+              <Badge variant={returnPct >= 0 ? 'default' : 'destructive'} className="text-xs font-mono">
+                {returnPct >= 0 ? '+' : ''}{returnPct.toFixed(2)}%
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* 우: 보유 종목 + 거래 이력 */}
+      <div className="flex-1 space-y-3 overflow-y-auto">
+        {/* 보유 종목 */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">보유 종목</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {portfolio.holdings.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">보유 종목이 없습니다</p>
+            ) : (
+              <div className="space-y-1">
+                <div className="grid grid-cols-6 gap-2 text-[10px] text-muted-foreground uppercase px-2 pb-1 border-b border-border">
+                  <span>종목</span>
+                  <span className="text-right">수량</span>
+                  <span className="text-right">평균가</span>
+                  <span className="text-right">현재가</span>
+                  <span className="text-right">평가액</span>
+                  <span className="text-right">손익</span>
+                </div>
+                {portfolio.holdings.map(h => {
+                  const curP = h.symbol === symbol && currentPrice ? currentPrice : h.avgPrice;
+                  const value = h.quantity * curP;
+                  const pnl = (curP - h.avgPrice) * h.quantity;
+                  const pnlPct = ((curP - h.avgPrice) / h.avgPrice) * 100;
+                  return (
+                    <div key={h.symbol} className="grid grid-cols-6 gap-2 text-xs px-2 py-1.5 rounded hover:bg-muted/50">
+                      <span className="font-mono font-bold">{h.symbol}</span>
+                      <span className="text-right">{h.quantity}</span>
+                      <span className="text-right font-mono">${h.avgPrice.toFixed(2)}</span>
+                      <span className="text-right font-mono">${curP.toFixed(2)}</span>
+                      <span className="text-right font-mono">${value.toFixed(2)}</span>
+                      <span className={`text-right font-mono ${pnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)} ({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 거래 이력 */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">거래 이력</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {portfolio.trades.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">거래 이력이 없습니다</p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto space-y-1">
+                {[...portfolio.trades].reverse().map((t, i) => (
+                  <div key={i} className="flex items-center gap-3 rounded-md border border-border px-3 py-2 text-xs">
+                    <Badge variant={t.action === 'SELL' ? 'destructive' : 'default'} className="text-[9px] w-10 justify-center">
+                      {t.action}
+                    </Badge>
+                    <span className="font-mono font-bold w-14">{t.symbol}</span>
+                    <span className="text-muted-foreground">{t.quantity}주</span>
+                    <span className="font-mono">${t.price.toFixed(2)}</span>
+                    <span className="font-mono text-muted-foreground ml-auto">
+                      ${(t.price * t.quantity).toFixed(2)}
+                    </span>
+                    <span className="text-muted-foreground text-[10px] w-28 text-right">
+                      {new Date(t.timestamp).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 // ── 매매 복기 ──
 
 interface OrderLog {
@@ -249,7 +568,7 @@ function TVChartSnapshot({ symbol, theme }: { symbol: string; theme: string }) {
 
 // ── 메인 ──
 
-type Tab = 'scenario' | 'review';
+type Tab = 'scenario' | 'review' | 'virtual';
 
 export default function StrategyPage() {
   const [symbol, setSymbol] = useState('AAPL');
@@ -336,6 +655,7 @@ export default function StrategyPage() {
         {([
           { id: 'scenario' as Tab, label: '시나리오 예측' },
           { id: 'review' as Tab, label: '매매 복기' },
+          { id: 'virtual' as Tab, label: '가상 매매' },
         ]).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`px-4 py-1.5 text-xs rounded-md transition-colors ${
@@ -429,8 +749,10 @@ export default function StrategyPage() {
             )}
           </div>
         </div>
-      ) : (
+      ) : tab === 'review' ? (
         <TradeReviewTab />
+      ) : (
+        <VirtualTradingTab symbol={symbol} />
       )}
     </div>
   );
