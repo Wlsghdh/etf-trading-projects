@@ -12,11 +12,16 @@ class YFinanceProvider(BaseDataProvider):
     def fetch_stock_data(self, ticker: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
         """
         Fetch OHLCV + dividends + stock_splits for a single ticker.
+
+        Uses auto_adjust=True so OHLCV prices are split-adjusted,
+        preventing fake price drops from stock splits in the data.
+
         Returns DataFrame with columns: [open, high, low, close, volume, dividends, stock_splits]
         """
         try:
             stock = yf.Ticker(ticker)
-            df = stock.history(start=start_date, end=end_date, auto_adjust=False)
+            # auto_adjust=True returns split-adjusted prices
+            df = stock.history(start=start_date, end=end_date, auto_adjust=True)
             if df.empty:
                 return None
             # Rename columns to lowercase

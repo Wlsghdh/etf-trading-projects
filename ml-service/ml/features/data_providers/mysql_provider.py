@@ -6,13 +6,20 @@ TradingView scraped stock data.
 
 Table format: {symbol}_{timeframe} (e.g., AAPL_D, NVDA_1h)
 Columns: time, symbol, timeframe, open, high, low, close, volume, rsi, macd
+
+NOTE: TradingView data stores raw (unadjusted) prices. Stock splits
+(e.g., AAPL 4:1 in 2020) appear as sudden -75% drops. This provider
+adjusts prices at read time using split history from yfinance.
 """
 import os
+import logging
 import pandas as pd
 from typing import List, Optional
 from dotenv import load_dotenv
 
 from .base import BaseDataProvider
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -32,6 +39,7 @@ class MySQLProvider(BaseDataProvider):
         self,
         db_url: Optional[str] = None,
         timeframe: str = "D",
+        adjust_splits: bool = True,
     ):
         """
         Initialize MySQL provider.
@@ -41,10 +49,14 @@ class MySQLProvider(BaseDataProvider):
                     - MYSQL_URL (full URL) or
                     - MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DB
             timeframe: Timeframe suffix for table names (default "D" for daily)
+            adjust_splits: If True, apply stock split adjustments to OHLCV prices
+                           using split history from yfinance. (default True)
         """
         self.db_url = db_url or self._get_db_url_from_env()
         self.timeframe = timeframe
+        self.adjust_splits = adjust_splits
         self._engine = None
+        self._split_cache: dict = {}  # symbol -> splits DataFrame
 
     def _get_db_url_from_env(self) -> str:
         """Build database URL from environment variables."""
@@ -79,6 +91,98 @@ class MySQLProvider(BaseDataProvider):
         """Get table name for a symbol."""
         return f"{symbol}_{self.timeframe}"
 
+    def _get_splits(self, ticker: str) -> pd.DataFrame:
+        """
+        Fetch stock split history from yfinance (cached per symbol).
+
+        Returns:
+            DataFrame with DatetimeIndex and 'Stock Splits' column,
+            or empty DataFrame if unavailable.
+        """
+        if ticker in self._split_cache:
+            return self._split_cache[ticker]
+
+        try:
+            import yfinance as yf
+            stock = yf.Ticker(ticker)
+            splits = stock.splits  # Series with DatetimeIndex
+
+            if splits is not None and not splits.empty:
+                # Ensure timezone-naive for comparison with DB dates
+                if splits.index.tz is not None:
+                    splits.index = splits.index.tz_localize(None)
+                self._split_cache[ticker] = splits
+                logger.info(
+                    f"  [MySQL] Loaded {len(splits)} splits for {ticker}: "
+                    f"{dict(zip(splits.index.strftime('%Y-%m-%d'), splits.values))}"
+                )
+                return splits
+        except Exception as e:
+            logger.warning(f"  [MySQL] Could not fetch splits for {ticker}: {e}")
+
+        self._split_cache[ticker] = pd.Series(dtype=float)
+        return self._split_cache[ticker]
+
+    def _apply_split_adjustment(
+        self, df: pd.DataFrame, ticker: str
+    ) -> pd.DataFrame:
+        """
+        Adjust OHLCV prices for stock splits.
+
+        For each split event, all prices BEFORE the split date are divided
+        by the cumulative split factor. This converts raw prices to
+        split-adjusted prices (equivalent to yfinance auto_adjust for splits).
+
+        Example: AAPL 4:1 split on 2020-08-31
+            - Pre-split close $500 -> adjusted $125
+            - Post-split close $125 -> stays $125
+
+        Also populates the 'stock_splits' column with actual split ratios.
+        """
+        splits = self._get_splits(ticker)
+        if splits.empty:
+            return df
+
+        price_cols = ['open', 'high', 'low', 'close']
+
+        # Build cumulative adjustment factor from newest split to oldest
+        # For each date, the factor is the product of all splits AFTER that date
+        # We divide pre-split prices by split ratio to get adjusted prices
+        df = df.copy()
+        df['_adj_factor'] = 1.0
+
+        for split_date, ratio in splits.items():
+            if ratio <= 0:
+                continue
+            split_date = pd.Timestamp(split_date)
+            # All rows before the split date need adjustment
+            mask = df['date'] < split_date
+            df.loc[mask, '_adj_factor'] *= ratio
+
+        # Apply adjustment: divide raw prices by cumulative factor
+        for col in price_cols:
+            df[col] = df[col] / df['_adj_factor']
+
+        # Adjust volume inversely (more shares after split)
+        df['volume'] = df['volume'] * df['_adj_factor']
+
+        # Populate stock_splits column with actual split data
+        df['stock_splits'] = 0.0
+        for split_date, ratio in splits.items():
+            split_date = pd.Timestamp(split_date)
+            mask = df['date'] == split_date
+            if mask.any():
+                df.loc[mask, 'stock_splits'] = ratio
+
+        adjusted_count = (df['_adj_factor'] != 1.0).sum()
+        if adjusted_count > 0:
+            logger.info(
+                f"  [MySQL] Split-adjusted {adjusted_count}/{len(df)} rows for {ticker}"
+            )
+
+        df = df.drop(columns=['_adj_factor'])
+        return df
+
     def fetch_stock_data(
         self,
         ticker: str,
@@ -88,13 +192,18 @@ class MySQLProvider(BaseDataProvider):
         """
         Fetch OHLCV data for a single ticker from MySQL.
 
+        If adjust_splits=True (default), prices are split-adjusted at read time
+        using split history from yfinance. This prevents the ML model from seeing
+        fake price drops caused by stock splits.
+
         Args:
             ticker: Stock symbol (e.g., "AAPL")
             start_date: Start date (YYYY-MM-DD)
             end_date: End date (YYYY-MM-DD)
 
         Returns:
-            DataFrame with columns: [ticker, date, open, high, low, close, volume]
+            DataFrame with columns: [ticker, date, open, high, low, close, volume,
+                                      dividends, stock_splits]
             Returns None if table doesn't exist or query fails
         """
         table_name = self._get_table_name(ticker)
@@ -128,9 +237,13 @@ class MySQLProvider(BaseDataProvider):
             # Reorder columns
             df = df[['ticker', 'date', 'open', 'high', 'low', 'close', 'volume']]
 
-            # Add YFinance-specific columns (not available in MySQL) as zeros
+            # Add placeholder columns before adjustment
             df['dividends'] = 0.0
             df['stock_splits'] = 0.0
+
+            # Apply stock split adjustments if enabled
+            if self.adjust_splits:
+                df = self._apply_split_adjustment(df, ticker)
 
             return df
 
