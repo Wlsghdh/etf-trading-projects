@@ -53,21 +53,26 @@ async function fetchExchangeRate(): Promise<{ usdKrw: number; change: number } |
 
 async function fetchYahooQuote(
   symbol: string
-): Promise<{ price: number; change: number } | null> {
+): Promise<{ price: number; change: number; sparkline?: number[] } | null> {
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2d`;
+    // 30일 히스토리로 스파크라인 데이터도 가져오기
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1mo`;
     const data = (await fetchJSON(url)) as {
       chart: {
         result: {
           meta: { regularMarketPrice: number; previousClose: number };
+          indicators: { quote: { close: number[] }[] };
         }[];
       };
     };
-    const meta = data.chart?.result?.[0]?.meta;
+    const result = data.chart?.result?.[0];
+    const meta = result?.meta;
     if (!meta) return null;
     const price = meta.regularMarketPrice;
     const prev = meta.previousClose || price;
-    return { price, change: ((price - prev) / prev) * 100 };
+    // 종가 배열에서 null 제거
+    const closes = result?.indicators?.quote?.[0]?.close?.filter((v: number | null) => v != null) ?? [];
+    return { price, change: ((price - prev) / prev) * 100, sparkline: closes };
   } catch {
     return null;
   }

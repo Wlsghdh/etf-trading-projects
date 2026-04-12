@@ -224,17 +224,42 @@ function fmtVol(v: number) { return v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >=
 // ── 시장 데이터 패널 ──
 interface MarketData {
   exchangeRate: { usdKrw: number; change: number } | null;
-  vix: { value: number; change: number; label: string } | null;
-  gold: { price: number; change: number } | null;
-  bitcoin: { price: number; change: number } | null;
-  crudeOil: { price: number; change: number } | null;
-  dollarIndex: { price: number; change: number } | null;
+  vix: { value: number; change: number; label: string; sparkline?: number[] } | null;
+  gold: { price: number; change: number; sparkline?: number[] } | null;
+  bitcoin: { price: number; change: number; sparkline?: number[] } | null;
+  crudeOil: { price: number; change: number; sparkline?: number[] } | null;
+  dollarIndex: { price: number; change: number; sparkline?: number[] } | null;
   rates: { fedRate: number | null; treasury10y: number | null };
   indices: {
-    sp500: { value: number; change: number } | null;
-    nasdaq: { value: number; change: number } | null;
-    dow: { value: number; change: number } | null;
+    sp500: { value?: number; price?: number; change: number; sparkline?: number[] } | null;
+    nasdaq: { value?: number; price?: number; change: number; sparkline?: number[] } | null;
+    dow: { value?: number; price?: number; change: number; sparkline?: number[] } | null;
   };
+}
+
+// 미니 스파크라인 차트 (SVG)
+function Sparkline({ data, color, width = 80, height = 24 }: { data: number[]; color: string; width?: number; height?: number }) {
+  if (!data || data.length < 2) return null;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const points = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * width;
+    const y = height - ((v - min) / range) * (height - 2) - 1;
+    return `${x},${y}`;
+  }).join(' ');
+  // 그라데이션 영역
+  const areaPoints = `0,${height} ${points} ${width},${height}`;
+  const isUp = data[data.length - 1] >= data[0];
+  const strokeColor = color || (isUp ? '#22c55e' : '#ef4444');
+  const fillColor = isUp ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)';
+
+  return (
+    <svg width={width} height={height} className="mt-0.5">
+      <polygon points={areaPoints} fill={fillColor} />
+      <polyline points={points} fill="none" stroke={strokeColor} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 interface NewsItem {
@@ -248,25 +273,28 @@ interface NewsItem {
 function MarketDataPanel({ data }: { data: MarketData | null }) {
   if (!data) return null;
 
-  const items: { label: string; value: string; sub: string; color: string }[] = [];
+  const items: { label: string; value: string; sub: string; color: string; sparkline?: number[] }[] = [];
 
   if (data.indices.sp500) items.push({
     label: 'S&P 500',
     value: ((data.indices.sp500 as any).value ?? (data.indices.sp500 as any).price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 }),
     sub: `${pf(data.indices.sp500.change)}%`,
     color: data.indices.sp500.change >= 0 ? 'text-green-500' : 'text-red-500',
+    sparkline: data.indices.sp500.sparkline,
   });
   if (data.indices.nasdaq) items.push({
     label: 'NASDAQ',
     value: ((data.indices.nasdaq as any).value ?? (data.indices.nasdaq as any).price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 }),
     sub: `${pf(data.indices.nasdaq.change)}%`,
     color: data.indices.nasdaq.change >= 0 ? 'text-green-500' : 'text-red-500',
+    sparkline: data.indices.nasdaq.sparkline,
   });
   if (data.vix) items.push({
     label: `VIX (${data.vix.label})`,
     value: data.vix.value.toFixed(1),
     sub: `${pf(data.vix.change)}%`,
     color: data.vix.value > 30 ? 'text-red-500' : data.vix.value > 20 ? 'text-amber-500' : 'text-green-500',
+    sparkline: data.vix.sparkline,
   });
   if (data.exchangeRate) items.push({
     label: 'USD/KRW',
@@ -279,6 +307,7 @@ function MarketDataPanel({ data }: { data: MarketData | null }) {
     value: `$${data.gold.price.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
     sub: `${pf(data.gold.change)}%`,
     color: data.gold.change >= 0 ? 'text-amber-500' : 'text-red-500',
+    sparkline: data.gold.sparkline,
   });
   if (data.rates.fedRate !== null) items.push({
     label: 'Fed Rate',
@@ -297,32 +326,39 @@ function MarketDataPanel({ data }: { data: MarketData | null }) {
     value: ((data.indices.dow as any).value ?? (data.indices.dow as any).price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 }),
     sub: `${pf(data.indices.dow.change)}%`,
     color: data.indices.dow.change >= 0 ? 'text-green-500' : 'text-red-500',
+    sparkline: data.indices.dow.sparkline,
   });
   if (data.bitcoin) items.push({
     label: 'Bitcoin',
     value: `$${data.bitcoin.price.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
     sub: `${pf(data.bitcoin.change)}%`,
     color: data.bitcoin.change >= 0 ? 'text-orange-400' : 'text-red-500',
+    sparkline: data.bitcoin.sparkline,
   });
   if (data.crudeOil) items.push({
     label: 'Crude Oil',
     value: `$${data.crudeOil.price.toFixed(2)}`,
     sub: `${pf(data.crudeOil.change)}%`,
     color: data.crudeOil.change >= 0 ? 'text-green-500' : 'text-red-500',
+    sparkline: data.crudeOil.sparkline,
   });
   if (data.dollarIndex) items.push({
     label: 'Dollar Index',
     value: data.dollarIndex.price.toFixed(2),
     sub: `${pf(data.dollarIndex.change)}%`,
     color: data.dollarIndex.change >= 0 ? 'text-green-500' : 'text-red-500',
+    sparkline: data.dollarIndex.sparkline,
   });
 
   return (
     <div className="grid grid-cols-4 lg:grid-cols-11 gap-2 mb-3">
       {items.map(item => (
-        <div key={item.label} className="rounded-lg border border-border bg-card p-2 text-center">
-          <div className="text-[9px] text-muted-foreground uppercase tracking-wider truncate">{item.label}</div>
+        <div key={item.label} className="rounded-lg border border-border bg-card p-2 text-center flex flex-col items-center">
+          <div className="text-[9px] text-muted-foreground uppercase tracking-wider truncate w-full">{item.label}</div>
           <div className={`text-sm font-bold font-mono ${item.color}`}>{item.value}</div>
+          {item.sparkline && item.sparkline.length > 2 && (
+            <Sparkline data={item.sparkline} color={item.color.includes('green') ? '#22c55e' : item.color.includes('red') ? '#ef4444' : item.color.includes('amber') ? '#f59e0b' : item.color.includes('orange') ? '#fb923c' : item.color.includes('blue') ? '#3b82f6' : item.color.includes('purple') ? '#a855f7' : item.color.includes('cyan') ? '#06b6d4' : '#6b7280'} />
+          )}
           <div className={`text-[10px] ${item.color} opacity-80`}>{item.sub}</div>
         </div>
       ))}
