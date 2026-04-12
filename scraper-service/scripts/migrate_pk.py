@@ -40,7 +40,7 @@ from sqlalchemy import create_engine, text
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
-LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+LOG_DIR = Path("/tmp/migrate_pk_logs")
 LOG_DIR.mkdir(exist_ok=True)
 
 log_file = LOG_DIR / f"migrate_pk_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
