@@ -138,32 +138,13 @@ export default function PortfolioPage() {
     );
   }
 
-  // KIS API 우선, 실패 시 DB fallback
-  const useKIS = kisBalance?.success ?? false;
+  // KIS 보유종목이 있으면 KIS 우선, 없으면 DB fallback
+  const kisHoldings = kisBalance?.holdings ?? [];
+  const hasKISHoldings = kisHoldings.length > 0;
 
-  const totalInvestment = useKIS
-    ? kisBalance!.total_purchase_amount || kisBalance!.usd_buy_amount
-    : portfolio?.totalInvestment ?? 0;
-
-  const totalCurrentValue = useKIS
-    ? kisBalance!.total_evaluation_amount || kisBalance!.usd_eval_amount
-    : portfolio?.totalCurrentValue ?? 0;
-
-  const totalProfitLoss = useKIS
-    ? kisBalance!.total_profit_loss
-    : portfolio?.totalProfitLoss ?? 0;
-
-  const totalProfitLossPercent = useKIS
-    ? kisBalance!.profit_loss_rate
-    : portfolio?.totalProfitLossPercent ?? 0;
-
-  const holdingsCount = useKIS
-    ? kisBalance!.holdings.length
-    : portfolio?.holdings.length ?? 0;
-
-  // 보유 종목: KIS 우선, 없으면 DB
-  const displayHoldings = useKIS && kisBalance!.holdings.length > 0
-    ? kisBalance!.holdings.map(h => ({
+  // 보유종목: KIS balance API 기준 (정확한 매수가/현재가)
+  const displayHoldings = hasKISHoldings
+    ? kisHoldings.map(h => ({
         etfCode: h.code,
         etfName: h.name || h.code,
         quantity: h.quantity,
@@ -176,16 +157,29 @@ export default function PortfolioPage() {
       }))
     : portfolio?.holdings ?? [];
 
+  // 총액: KIS 보유종목 기반으로 달러 계산 (present-balance는 원화라 부정확)
+  const totalInvestment = hasKISHoldings
+    ? kisHoldings.reduce((s, h) => s + h.avg_price * h.quantity, 0)
+    : portfolio?.totalInvestment ?? 0;
+
+  const totalCurrentValue = hasKISHoldings
+    ? kisHoldings.reduce((s, h) => s + h.current_price * h.quantity, 0)
+    : portfolio?.totalCurrentValue ?? 0;
+
+  const totalProfitLoss = totalCurrentValue - totalInvestment;
+  const totalProfitLossPercent = totalInvestment > 0 ? (totalProfitLoss / totalInvestment) * 100 : 0;
+  const holdingsCount = displayHoldings.length;
+
   const isPositive = totalProfitLoss >= 0;
   const dbHoldingsCount = portfolio?.holdings.length ?? 0;
-  const showSyncWarning = useKIS && holdingsCount === 0 && dbHoldingsCount > 0;
+  const showSyncWarning = hasKISHoldings && holdingsCount === 0 && dbHoldingsCount > 0;
 
   return (
     <div className="space-y-6">
       {/* KIS 동기화 상태 */}
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-2">
-          {useKIS ? (
+          {hasKISHoldings ? (
             <>
               <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
               <span className="text-green-500 font-medium">KIS Live</span>
@@ -260,7 +254,7 @@ export default function PortfolioPage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               총 손익
-              {useKIS && <Badge variant="outline" className="ml-2 text-[9px]">KIS</Badge>}
+              {hasKISHoldings && <Badge variant="outline" className="ml-2 text-[9px]">KIS</Badge>}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -286,7 +280,7 @@ export default function PortfolioPage() {
           <CardTitle className="text-base flex items-center gap-2">
             보유 종목
             <Badge variant="outline" className="text-[10px]">
-              {useKIS ? `KIS ${holdingsCount}개` : `DB ${holdingsCount}개`}
+              {hasKISHoldings ? `KIS ${holdingsCount}개` : `DB ${holdingsCount}개`}
             </Badge>
           </CardTitle>
         </CardHeader>
