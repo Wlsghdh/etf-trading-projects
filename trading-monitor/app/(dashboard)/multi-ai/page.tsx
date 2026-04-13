@@ -434,60 +434,110 @@ function TVTechnicalAnalysis({ symbol }: { symbol: string }) {
   return <div ref={ref} className="w-full h-full min-h-[280px]" />;
 }
 
-function TVFinancials({ symbol }: { symbol: string }) {
+// 범용 TradingView 위젯 (심볼 탭 선택 가능)
+function TVWidgetWithTabs({ tabs, widgetType, defaultTab }: {
+  tabs: { label: string; symbol: string }[];
+  widgetType: 'financials' | 'mini-overview' | 'advanced-chart';
+  defaultTab?: number;
+}) {
+  const [activeTab, setActiveTab] = useState(defaultTab ?? 0);
   const ref = useRef<HTMLDivElement>(null);
   const theme = useTheme();
+  const currentSymbol = tabs[activeTab]?.symbol || tabs[0]?.symbol;
+
   useEffect(() => {
-    if (!ref.current || !symbol) return;
+    if (!ref.current || !currentSymbol) return;
     ref.current.innerHTML = '';
-    const tvSym = TV_EXCHANGE_MAP[symbol] ? `${TV_EXCHANGE_MAP[symbol]}:${symbol}` : symbol;
+
     const script = document.createElement('script');
-    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-financials.js';
+    let config: Record<string, unknown>;
+
+    if (widgetType === 'financials') {
+      script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-financials.js';
+      config = {
+        isTransparent: true, largeChartUrl: '', displayMode: 'regular',
+        width: '100%', height: '100%', symbol: currentSymbol,
+        colorTheme: theme, locale: 'kr',
+      };
+    } else if (widgetType === 'mini-overview') {
+      script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-mini-symbol-overview.js';
+      config = {
+        symbol: currentSymbol, width: '100%', height: '100%', locale: 'kr',
+        dateRange: '3M', colorTheme: theme, isTransparent: true,
+        autosize: true, largeChartUrl: '',
+      };
+    } else {
+      script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
+      config = {
+        autosize: true, symbol: currentSymbol, interval: 'D', timezone: 'Asia/Seoul',
+        theme, style: '1', locale: 'kr', hide_top_toolbar: true,
+        allow_symbol_change: false, save_image: false, calendar: false,
+        studies: ['RSI@tv-basicstudies'],
+      };
+    }
+
     script.async = true;
-    script.innerHTML = JSON.stringify({
-      isTransparent: true, largeChartUrl: '', displayMode: 'regular',
-      width: '100%', height: '100%', symbol: tvSym,
-      colorTheme: theme, locale: 'kr',
-    });
+    script.innerHTML = JSON.stringify(config);
     const w = document.createElement('div');
     w.className = 'tradingview-widget-container';
     w.style.cssText = 'height:100%;width:100%';
     const inner = document.createElement('div');
     inner.className = 'tradingview-widget-container__widget';
-    inner.style.cssText = 'height:100%;width:100%';
+    inner.style.cssText = 'height:calc(100% - 32px);width:100%';
     w.appendChild(inner); w.appendChild(script);
     ref.current.appendChild(w);
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, [symbol, theme]);
-  return <div ref={ref} className="w-full h-full min-h-[280px]" />;
+  }, [currentSymbol, theme, widgetType]);
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* 탭 선택 */}
+      <div className="flex gap-1 px-2 py-1.5 border-b border-border/50 overflow-x-auto shrink-0">
+        {tabs.map((tab, i) => (
+          <button key={tab.symbol} onClick={() => setActiveTab(i)}
+            className={`px-2 py-0.5 text-[10px] rounded transition-colors whitespace-nowrap ${
+              activeTab === i
+                ? 'bg-primary/20 text-primary font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div ref={ref} className="flex-1 min-h-[260px]" />
+    </div>
+  );
 }
 
+// Fundamental 차트: 종목 재무제표 + 비교 종목
+function TVFinancials({ symbol }: { symbol: string }) {
+  const tvSym = TV_EXCHANGE_MAP[symbol] ? `${TV_EXCHANGE_MAP[symbol]}:${symbol}` : symbol;
+  const tabs = [
+    { label: symbol, symbol: tvSym },
+    { label: 'S&P 500', symbol: 'AMEX:SPY' },
+    { label: 'NASDAQ', symbol: 'NASDAQ:QQQ' },
+    { label: 'Apple', symbol: 'NASDAQ:AAPL' },
+    { label: 'Microsoft', symbol: 'NASDAQ:MSFT' },
+  ];
+  return <TVWidgetWithTabs tabs={tabs} widgetType="financials" />;
+}
+
+// Market 차트: 주요 지수/원자재 미니차트
 function TVMiniOverview({ symbol }: { symbol: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const theme = useTheme();
-  useEffect(() => {
-    if (!ref.current || !symbol) return;
-    ref.current.innerHTML = '';
-    const tvSym = TV_EXCHANGE_MAP[symbol] ? `${TV_EXCHANGE_MAP[symbol]}:${symbol}` : symbol;
-    const script = document.createElement('script');
-    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-mini-symbol-overview.js';
-    script.async = true;
-    script.innerHTML = JSON.stringify({
-      symbol: tvSym, width: '100%', height: '100%', locale: 'kr',
-      dateRange: '1M', colorTheme: theme, isTransparent: true,
-      autosize: true, largeChartUrl: '',
-    });
-    const w = document.createElement('div');
-    w.className = 'tradingview-widget-container';
-    w.style.cssText = 'height:100%;width:100%';
-    const inner = document.createElement('div');
-    inner.className = 'tradingview-widget-container__widget';
-    inner.style.cssText = 'height:100%;width:100%';
-    w.appendChild(inner); w.appendChild(script);
-    ref.current.appendChild(w);
-    return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, [symbol, theme]);
-  return <div ref={ref} className="w-full h-full min-h-[280px]" />;
+  const tvSym = TV_EXCHANGE_MAP[symbol] ? `${TV_EXCHANGE_MAP[symbol]}:${symbol}` : symbol;
+  const tabs = [
+    { label: symbol, symbol: tvSym },
+    { label: 'S&P 500', symbol: 'FOREXCOM:SPXUSD' },
+    { label: 'NASDAQ', symbol: 'FOREXCOM:NSXUSD' },
+    { label: 'DOW', symbol: 'FOREXCOM:DJI' },
+    { label: 'VIX', symbol: 'TVC:VIX' },
+    { label: 'Gold', symbol: 'COMEX:GC1!' },
+    { label: 'Oil', symbol: 'NYMEX:CL1!' },
+    { label: 'USD/KRW', symbol: 'FX_IDC:USDKRW' },
+    { label: 'BTC', symbol: 'BITSTAMP:BTCUSD' },
+    { label: '10Y Bond', symbol: 'TVC:US10Y' },
+  ];
+  return <TVWidgetWithTabs tabs={tabs} widgetType="mini-overview" />;
 }
 
 const TV_EXCHANGE_MAP: Record<string, string> = {
