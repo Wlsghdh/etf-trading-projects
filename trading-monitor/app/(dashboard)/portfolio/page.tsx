@@ -49,13 +49,62 @@ export default function PortfolioPage() {
   const [lastSync, setLastSync] = useState<Date | null>(null);
 
   // KIS 실시간 잔고 조회 + 30초마다 갱신
+  // present-balance(총액) + balance(보유종목) 두 API를 결합
   useEffect(() => {
     const fetchKIS = async () => {
       try {
-        const res = await fetch('/trading/api/trading/present-balance');
-        if (res.ok) {
-          const data = await res.json();
-          setKisBalance(data);
+        const [presRes, balRes] = await Promise.all([
+          fetch('/trading/api/trading/present-balance').catch(() => null),
+          fetch('/trading/api/trading/balance').catch(() => null),
+        ]);
+
+        let result: PresentBalance | null = null;
+
+        // present-balance에서 총액 가져오기
+        if (presRes?.ok) {
+          result = await presRes.json();
+        }
+
+        // balance에서 보유종목 가져오기 (더 정확)
+        if (balRes?.ok) {
+          const balData = await balRes.json();
+          const balHoldings = (balData.holdings || []).map((h: Record<string, unknown>) => ({
+            code: h.code as string,
+            name: (h.name as string) || (h.code as string),
+            quantity: h.quantity as number,
+            avg_price: h.avg_price as number,
+            current_price: h.current_price as number,
+            evaluation: ((h.current_price as number) || 0) * ((h.quantity as number) || 0),
+            purchase_amount: ((h.avg_price as number) || 0) * ((h.quantity as number) || 0),
+            profit_loss: (((h.current_price as number) || 0) - ((h.avg_price as number) || 0)) * ((h.quantity as number) || 0),
+            profit_loss_rate: h.pnl_rate as number || 0,
+            exchange_code: (h.exchange_code as string) || '',
+          }));
+
+          if (balHoldings.length > 0) {
+            if (!result) {
+              result = {
+                success: true, total_purchase_amount: 0, total_evaluation_amount: 0,
+                total_profit_loss: 0, profit_loss_rate: 0, total_deposit: 0,
+                withdrawable_amount: 0, usd_buy_amount: 0, usd_eval_amount: 0,
+                usd_deposit: 0, foreign_total_krw: 0, exchange_rate: 0, holdings: [],
+              };
+            }
+            result.holdings = balHoldings;
+            // 보유종목 기반으로 총액 재계산
+            const totalBuy = balHoldings.reduce((s: number, h: { purchase_amount: number }) => s + h.purchase_amount, 0);
+            const totalEval = balHoldings.reduce((s: number, h: { evaluation: number }) => s + h.evaluation, 0);
+            if (totalBuy > 0 && (result.total_purchase_amount === 0 || result.holdings.length > 0)) {
+              result.usd_buy_amount = totalBuy;
+              result.usd_eval_amount = totalEval;
+              result.total_profit_loss = totalEval - totalBuy;
+              result.profit_loss_rate = totalBuy > 0 ? ((totalEval - totalBuy) / totalBuy) * 100 : 0;
+            }
+          }
+        }
+
+        if (result) {
+          setKisBalance(result);
           setLastSync(new Date());
         }
       } catch { /* ignore */ }
