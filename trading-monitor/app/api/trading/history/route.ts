@@ -68,11 +68,10 @@ export async function GET() {
         else byDate[date].sells++;
 
         const etfCode = String(o.etf_code ?? '');
-        // 체결가 우선, 없으면 지정가, 없으면 KIS 평균매수가
-        const kisAvg = kisData?.avgPrice || 0;
-        const price = Number(o.price ?? 0) || Number(o.limit_price ?? 0) || kisAvg;
-        const quantity = Number(o.quantity || 0);
         const kisData = kisPrices[etfCode];
+        const quantity = Number(o.quantity || 0);
+        // 체결가 우선, 없으면 지정가, 없으면 KIS 평균매수가
+        const price = Number(o.price ?? 0) || Number(o.limit_price ?? 0) || (kisData?.avgPrice || 0);
 
         // 미실현 손익: KIS 현재가 vs 매수가
         let profitLoss = 0;
