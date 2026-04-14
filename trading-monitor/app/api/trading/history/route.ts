@@ -57,7 +57,7 @@ export async function GET() {
       for (const o of allOrders) {
         if (o.status !== 'SUCCESS') continue;
 
-        const date = (o.created_at || '').split('T')[0];
+        const date = (String(o.created_at || '')).split('T')[0];
         if (!date) continue;
         if (!byDate[date]) byDate[date] = { buys: 0, sells: 0, trades: [] };
 
