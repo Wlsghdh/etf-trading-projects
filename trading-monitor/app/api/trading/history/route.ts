@@ -14,10 +14,27 @@ const TRADING_SERVICE_URL = process.env.TRADING_SERVICE_URL || 'http://localhost
  */
 export async function GET() {
   try {
-    const [ordersRes, balRes] = await Promise.all([
-      fetch(`${TRADING_SERVICE_URL}/api/trading/orders?page_size=500`, { signal: AbortSignal.timeout(5000) }),
+    const [balRes] = await Promise.all([
       fetch(`${TRADING_SERVICE_URL}/api/trading/balance`, { signal: AbortSignal.timeout(5000) }),
     ]);
+
+    // 전체 주문을 페이지별로 가져오기 (최대 10페이지)
+    let allOrders: Record<string, unknown>[] = [];
+    for (let page = 1; page <= 10; page++) {
+      try {
+        const res = await fetch(
+          `${TRADING_SERVICE_URL}/api/trading/orders?page=${page}&page_size=50`,
+          { signal: AbortSignal.timeout(5000) }
+        );
+        if (!res.ok) break;
+        const data = await res.json();
+        const orders = data.orders || [];
+        if (orders.length === 0) break;
+        allOrders = allOrders.concat(orders);
+        if (allOrders.length >= (data.total || 0)) break;
+      } catch { break; }
+    }
+    const ordersOk = allOrders.length > 0;
 
     // KIS 보유종목 현재가
     const kisPrices: Record<string, { currentPrice: number; avgPrice: number; pnlRate: number; quantity: number }> = {};
@@ -36,9 +53,8 @@ export async function GET() {
     const byDate: Record<string, { buys: number; sells: number; trades: Array<Record<string, unknown>> }> = {};
 
     // SUCCESS 주문만 사용
-    if (ordersRes.ok) {
-      const ordersData = await ordersRes.json();
-      for (const o of ordersData.orders || []) {
+    if (ordersOk) {
+      for (const o of allOrders) {
         if (o.status !== 'SUCCESS') continue;
 
         const date = (o.created_at || '').split('T')[0];
