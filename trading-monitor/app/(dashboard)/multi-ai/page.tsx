@@ -1000,6 +1000,36 @@ export default function MultiAIPage() {
       {/* ── 뉴스 티커 ── */}
       <NewsTicker items={newsItems} />
 
+      {/* ── 차트 3열: Advanced Chart / Financials / Mini Overview ── */}
+      {analysisSymbol && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 shrink-0">
+          <Card size="sm" className="overflow-hidden">
+            <CardHeader className="py-2 px-3">
+              <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">Advanced Chart</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 h-[300px]">
+              <TradingViewChart symbol={analysisSymbol} />
+            </CardContent>
+          </Card>
+          <Card size="sm" className="overflow-hidden">
+            <CardHeader className="py-2 px-3">
+              <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">Financials</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 h-[300px]">
+              <TVFinancials symbol={analysisSymbol} />
+            </CardContent>
+          </Card>
+          <Card size="sm" className="overflow-hidden">
+            <CardHeader className="py-2 px-3">
+              <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">Market Overview</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 h-[300px]">
+              <TVMiniOverview symbol={analysisSymbol} />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* ── 3x3 그리드 ── */}
       <div className="shrink-0">
           {/* AI 선택 탭 */}
@@ -1038,33 +1068,22 @@ export default function MultiAIPage() {
                   ))}
                 </div>
 
-                {/* 3행: 각 행에 AI 응답 + TradingView 차트 */}
+                {/* 3행: 각 행에 AI 응답 */}
                 {ROW_LABELS.map(row => (
                   <div key={row.key} className="mb-4">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">{row.label}</span>
                       <div className="flex-1 h-px bg-border/50" />
                     </div>
-                    <div className="flex gap-2">
-                      {/* AI 응답 컬럼 */}
-                      <div className={`flex-1 grid ${activeAI === 'all' ? 'grid-cols-3' : 'grid-cols-1'} gap-2`}>
-                        {visibleCols.map(col => (
-                          <AICell
-                            key={col.id}
-                            aiId={col.id}
-                            text={grid?.[row.key]?.[col.id as 'gpt' | 'gemini' | 'claude'] ?? ''}
-                            loading={analyzing}
-                          />
-                        ))}
-                      </div>
-                      {/* 카테고리별 TradingView 차트 */}
-                      {analysisSymbol && (
-                        <div className="w-80 xl:w-96 shrink-0 rounded-lg border border-border/50 bg-card overflow-hidden">
-                          {row.key === 'technical' && <TVTechnicalAnalysis symbol={analysisSymbol} />}
-                          {row.key === 'fundamental' && <TVFinancials symbol={analysisSymbol} />}
-                          {row.key === 'market' && <TVMiniOverview symbol={analysisSymbol} />}
-                        </div>
-                      )}
+                    <div className={`grid ${activeAI === 'all' ? 'grid-cols-3' : 'grid-cols-1'} gap-2`}>
+                      {visibleCols.map(col => (
+                        <AICell
+                          key={col.id}
+                          aiId={col.id}
+                          text={grid?.[row.key]?.[col.id as 'gpt' | 'gemini' | 'claude'] ?? ''}
+                          loading={analyzing}
+                        />
+                      ))}
                     </div>
                   </div>
                 ))}
