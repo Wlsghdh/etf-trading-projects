@@ -57,17 +57,19 @@ export async function GET() {
       for (const o of allOrders) {
         if (o.status !== 'SUCCESS') continue;
 
-        const date = (String(o.created_at || '')).split('T')[0];
+        const createdAt = String(o.created_at ?? '');
+        const date = createdAt.split('T')[0];
         if (!date) continue;
         if (!byDate[date]) byDate[date] = { buys: 0, sells: 0, trades: [] };
 
-        const isBuy = (o.order_type || '').includes('BUY');
+        const orderType = String(o.order_type ?? '');
+        const isBuy = orderType.includes('BUY');
         if (isBuy) byDate[date].buys++;
         else byDate[date].sells++;
 
-        const etfCode = o.etf_code || '';
-        const price = o.price || o.limit_price || 0;
-        const quantity = o.quantity || 0;
+        const etfCode = String(o.etf_code ?? '');
+        const price = Number(o.price || o.limit_price || 0);
+        const quantity = Number(o.quantity || 0);
         const kisData = kisPrices[etfCode];
 
         // 미실현 손익: KIS 현재가 vs 매수가
@@ -77,7 +79,7 @@ export async function GET() {
 
         if (isBuy && kisData) {
           currentPrice = kisData.currentPrice;
-          profitLoss = (currentPrice - (kisData.avgPrice || price)) * quantity;
+          profitLoss = (currentPrice - (kisData.avgPrice || Number(price))) * Number(quantity);
           profitLossPercent = kisData.pnlRate;
         } else if (!isBuy && price > 0) {
           // 매도: 체결가 기준
@@ -85,17 +87,17 @@ export async function GET() {
         }
 
         byDate[date].trades.push({
-          id: String(o.id || ''),
+          id: String(o.id ?? ''),
           etfCode,
           etfName: etfCode,
           side: isBuy ? 'BUY' : 'SELL',
           quantity,
           price: Number((price).toFixed(2)),
           currentPrice: currentPrice > 0 ? Number(currentPrice.toFixed(2)) : undefined,
-          executedAt: o.created_at || '',
+          executedAt: createdAt,
           profitLoss: Number(profitLoss.toFixed(2)),
           profitLossPercent: Number(profitLossPercent.toFixed(2)),
-          orderId: o.order_id || undefined,
+          orderId: String(o.order_id ?? ''),
         });
       }
     }
