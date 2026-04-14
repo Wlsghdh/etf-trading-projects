@@ -509,6 +509,116 @@ function TVWidgetWithTabs({ tabs, widgetType, defaultTab }: {
   );
 }
 
+// 매출 & 순이익 성장 차트 (SVG)
+function GrowthChart({ symbol }: { symbol: string }) {
+  const W = 400;
+  const H = 280;
+  const PAD = { top: 30, right: 20, bottom: 50, left: 55 };
+
+  // 플레이스홀더 데이터 (AAPL급 규모 - yfinance 연동 예정)
+  const quarters = ['Q1 2025', 'Q2 2025', 'Q3 2025', 'Q4 2025'];
+  const revenue =  [94.8, 85.8, 89.5, 124.3]; // in $B
+  const netIncome = [23.6, 21.4, 22.2, 36.3]; // in $B
+
+  const maxVal = Math.max(...revenue) * 1.15;
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top - PAD.bottom;
+  const barW = chartW / quarters.length;
+  const barInner = barW * 0.55;
+
+  const scaleY = (v: number) => PAD.top + chartH * (1 - v / maxVal);
+
+  const linePoints = netIncome
+    .map((v, i) => `${PAD.left + barW * i + barW / 2},${scaleY(v)}`)
+    .join(' ');
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-3 pt-2 pb-1">
+        <p className="text-[11px] font-medium text-muted-foreground">
+          매출 &amp; 순이익 추이 (최근 4분기) — {symbol}
+        </p>
+      </div>
+      <div className="flex-1 px-2">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+          {/* Y축 그리드 */}
+          {Array.from({ length: 5 }, (_, i) => {
+            const val = (i / 4) * maxVal;
+            return (
+              <g key={i}>
+                <line x1={PAD.left} y1={scaleY(val)} x2={W - PAD.right} y2={scaleY(val)}
+                  stroke="currentColor" strokeOpacity={0.08} />
+                <text x={PAD.left - 6} y={scaleY(val) + 3} textAnchor="end"
+                  className="fill-muted-foreground" fontSize={9}>
+                  ${val.toFixed(0)}B
+                </text>
+              </g>
+            );
+          })}
+
+          {/* 매출 막대 (파란색) */}
+          {revenue.map((v, i) => (
+            <rect
+              key={`rev-${i}`}
+              x={PAD.left + barW * i + (barW - barInner) / 2}
+              y={scaleY(v)}
+              width={barInner}
+              height={chartH - (scaleY(v) - PAD.top)}
+              fill="#3b82f6"
+              fillOpacity={0.7}
+              rx={2}
+            />
+          ))}
+
+          {/* 순이익 라인 (녹색) */}
+          <polyline
+            points={linePoints}
+            fill="none"
+            stroke="#22c55e"
+            strokeWidth={2.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          {netIncome.map((v, i) => (
+            <circle
+              key={`ni-${i}`}
+              cx={PAD.left + barW * i + barW / 2}
+              cy={scaleY(v)}
+              r={4}
+              fill="#22c55e"
+              stroke="#0a0a0a"
+              strokeWidth={1.5}
+            />
+          ))}
+
+          {/* X축 라벨 */}
+          {quarters.map((q, i) => (
+            <text
+              key={q}
+              x={PAD.left + barW * i + barW / 2}
+              y={H - PAD.bottom + 16}
+              textAnchor="middle"
+              className="fill-muted-foreground"
+              fontSize={9}
+            >
+              {q}
+            </text>
+          ))}
+
+          {/* 범례 */}
+          <rect x={PAD.left} y={H - 16} width={10} height={10} fill="#3b82f6" fillOpacity={0.7} rx={1} />
+          <text x={PAD.left + 14} y={H - 7} className="fill-muted-foreground" fontSize={9}>Revenue</text>
+          <circle cx={PAD.left + 80} cy={H - 11} r={4} fill="#22c55e" />
+          <text x={PAD.left + 88} y={H - 7} className="fill-muted-foreground" fontSize={9}>Net Income</text>
+        </svg>
+      </div>
+      <p className="text-[10px] text-muted-foreground/60 px-3 pb-1 text-right">
+        * yfinance 연동 예정 — 현재 플레이스홀더 데이터
+      </p>
+    </div>
+  );
+}
+
 // Fundamental 차트: 종목 재무제표 + 비교 종목
 function TVFinancials({ symbol }: { symbol: string }) {
   const tvSym = TV_EXCHANGE_MAP[symbol] ? `${TV_EXCHANGE_MAP[symbol]}:${symbol}` : symbol;
@@ -1015,17 +1125,29 @@ export default function MultiAIPage() {
             </CardContent>
           </Card>
 
-          {/* 2행: Fundamental 재무제표 */}
-          <Card size="sm" className="overflow-hidden">
-            <CardHeader className="py-2 px-3">
-              <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">
-                Fundamental · Financials
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0 h-[400px]">
-              <TVFinancials symbol={analysisSymbol} />
-            </CardContent>
-          </Card>
+          {/* 2행: Fundamental 재무제표 + 성장 차트 */}
+          <div className="grid grid-cols-2 gap-3">
+            <Card size="sm" className="overflow-hidden">
+              <CardHeader className="py-2 px-3">
+                <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">
+                  Fundamental · Financials
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0 h-[400px]">
+                <TVFinancials symbol={analysisSymbol} />
+              </CardContent>
+            </Card>
+            <Card size="sm" className="overflow-hidden">
+              <CardHeader className="py-2 px-3">
+                <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">
+                  Fundamental · Growth
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0 h-[400px]">
+                <GrowthChart symbol={analysisSymbol} />
+              </CardContent>
+            </Card>
+          </div>
 
           {/* 3행: Market 지수/원자재 */}
           <Card size="sm" className="overflow-hidden">
