@@ -1000,30 +1000,41 @@ export default function MultiAIPage() {
       {/* ── 뉴스 티커 ── */}
       <NewsTicker items={newsItems} />
 
-      {/* ── 차트 3열: Advanced Chart / Financials / Mini Overview ── */}
+      {/* ── 차트 3행 (세로): Advanced Chart → Financials → Market ── */}
       {analysisSymbol && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 shrink-0">
+        <div className="space-y-3 shrink-0">
+          {/* 1행: TradingView 캔들차트 */}
           <Card size="sm" className="overflow-hidden">
             <CardHeader className="py-2 px-3">
-              <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">Advanced Chart</CardTitle>
+              <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">
+                Technical · {analysisSymbol} Advanced Chart
+              </CardTitle>
             </CardHeader>
-            <CardContent className="p-0 h-[300px]">
+            <CardContent className="p-0 h-[400px]">
               <TradingViewChart symbol={analysisSymbol} />
             </CardContent>
           </Card>
+
+          {/* 2행: Fundamental 재무제표 */}
           <Card size="sm" className="overflow-hidden">
             <CardHeader className="py-2 px-3">
-              <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">Financials</CardTitle>
+              <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">
+                Fundamental · Financials
+              </CardTitle>
             </CardHeader>
-            <CardContent className="p-0 h-[300px]">
+            <CardContent className="p-0 h-[400px]">
               <TVFinancials symbol={analysisSymbol} />
             </CardContent>
           </Card>
+
+          {/* 3행: Market 지수/원자재 */}
           <Card size="sm" className="overflow-hidden">
             <CardHeader className="py-2 px-3">
-              <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">Market Overview</CardTitle>
+              <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">
+                Market · Overview
+              </CardTitle>
             </CardHeader>
-            <CardContent className="p-0 h-[300px]">
+            <CardContent className="p-0 h-[400px]">
               <TVMiniOverview symbol={analysisSymbol} />
             </CardContent>
           </Card>

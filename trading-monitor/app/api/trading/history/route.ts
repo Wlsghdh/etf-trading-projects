@@ -80,17 +80,49 @@ export async function GET() {
       }
     }
 
+    // KIS 보유종목 현재가로 미실현 손익 계산
+    let kisPrices: Record<string, { currentPrice: number; pnlRate: number }> = {};
+    try {
+      const balRes = await fetch(`${TRADING_SERVICE_URL}/api/trading/balance`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (balRes.ok) {
+        const balData = await balRes.json();
+        for (const h of balData.holdings || []) {
+          kisPrices[h.code] = { currentPrice: h.current_price, pnlRate: h.pnl_rate || 0 };
+        }
+      }
+    } catch { /* silent */ }
+
+    // BUY 거래에 미실현 손익 추가
+    for (const dateEntry of Object.values(byDate)) {
+      for (const trade of dateEntry.trades) {
+        if (trade.side === 'BUY' && !trade.profitLoss) {
+          const kisData = kisPrices[trade.etfCode as string];
+          if (kisData && (trade.price as number) > 0) {
+            const buyPrice = trade.price as number;
+            const qty = trade.quantity as number;
+            const pnl = (kisData.currentPrice - buyPrice) * qty;
+            const pnlPct = buyPrice > 0 ? ((kisData.currentPrice - buyPrice) / buyPrice) * 100 : 0;
+            trade.profitLoss = Number(pnl.toFixed(2));
+            trade.profitLossPercent = Number(pnlPct.toFixed(2));
+            trade.currentPrice = kisData.currentPrice;
+          }
+        }
+      }
+    }
+
     const summaries = Object.entries(byDate)
       .map(([date, { buys, sells, trades }]) => ({
         date,
         buyCount: buys,
         sellCount: sells,
-        totalProfitLoss: trades.reduce((sum, t) => sum + ((t.profitLoss as number) || 0), 0),
+        totalProfitLoss: Number(trades.reduce((sum, t) => sum + ((t.profitLoss as number) || 0), 0).toFixed(2)),
         trades,
       }))
       .sort((a, b) => b.date.localeCompare(a.date));
 
-    console.log(`[BFF] trading/history: ${summaries.length}일 매매 기록`);
+    console.log(`[BFF] trading/history: ${summaries.length}일 매매 기록 (KIS ${Object.keys(kisPrices).length}종목 손익 반영)`);
     return NextResponse.json(summaries);
   } catch (error) {
     console.log('[BFF] trading/history: 연결 실패 -', error instanceof Error ? error.message : 'unknown');
