@@ -103,10 +103,8 @@ TIME_PERIODS = [
 # STOCK_LIST, NYSE_SYMBOLS, SECTOR_MAP은 상단 import에서 가져옴
 
 def get_exchange_prefix(symbol: str) -> str:
-    """종목의 거래소 접두사 반환"""
-    if symbol in NYSE_SYMBOLS:
-        return f"NYSE:{symbol}"
-    return f"NASDAQ:{symbol}"
+    """심볼 반환 (거래소 접두사 없이 - TradingView가 자동 매칭)"""
+    return symbol
 
 # 컨테이너 환경 경로
 DOWNLOAD_DIR = Path(settings.download_dir)
