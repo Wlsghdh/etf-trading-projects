@@ -212,6 +212,46 @@ class TradingViewScraper:
 
         await asyncio.sleep(3)  # 추가 로딩 대기
 
+    async def _dismiss_popups(self):
+        """TradingView 팝업/광고/배너 자동 닫기"""
+        try:
+            # 방법 1: X 버튼으로 팝업 닫기
+            closed = await self.page.evaluate("""
+                () => {
+                    let closed = 0;
+                    // 모달 닫기 버튼 (X)
+                    const closeButtons = document.querySelectorAll(
+                        'button[aria-label="Close"], button[aria-label="닫기"], ' +
+                        'svg[class*="close"], div[class*="close"] > svg, ' +
+                        'div[class*="modal"] button, div[class*="popup"] button, ' +
+                        'div[class*="overlay"] button[class*="close"]'
+                    );
+                    for (const btn of closeButtons) {
+                        try { btn.click(); closed++; } catch {}
+                    }
+                    // 모달 배경 클릭으로 닫기
+                    const overlays = document.querySelectorAll(
+                        'div[class*="overlay"][class*="modal"], div[class*="backdrop"]'
+                    );
+                    for (const ov of overlays) {
+                        try { ov.click(); closed++; } catch {}
+                    }
+                    return closed;
+                }
+            """)
+            if closed > 0:
+                logger.info(f"팝업 {closed}개 닫음")
+                await asyncio.sleep(0.5)
+        except Exception:
+            pass
+
+        # 방법 2: ESC 키
+        try:
+            await self.page.keyboard.press("Escape")
+            await asyncio.sleep(0.3)
+        except Exception:
+            pass
+
     async def search_and_select_symbol(self, symbol: str) -> bool:
         """
         심볼 검색 및 선택 (거래소 접두사 사용)
@@ -222,6 +262,9 @@ class TradingViewScraper:
         Returns:
             성공 여부
         """
+        # 팝업/광고 자동 닫기 (Flash Sale 등)
+        await self._dismiss_popups()
+
         # 거래소 접두사 포함 심볼 (예: "NYSE:BA", "NASDAQ:AAPL")
         search_symbol = get_exchange_prefix(symbol)
         logger.info(f"심볼 검색: {search_symbol}")
