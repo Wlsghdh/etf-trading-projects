@@ -274,6 +274,74 @@ class TradingViewScraper:
         # 즐겨찾기 지표 등 사이드 패널 닫기
         await self._dismiss_popups()
 
+        # 차트 타입을 캔들스틱(OHLC)으로 강제 설정
+        await self._ensure_candlestick_chart()
+
+    async def _ensure_candlestick_chart(self):
+        """차트 타입을 캔들스틱으로 설정 (라인 차트이면 OHLC 데이터가 CSV에 빠짐)"""
+        try:
+            # TradingView 내부 API로 차트 타입 변경 (1 = Candles)
+            chart_type = await self.page.evaluate("""
+                () => {
+                    try {
+                        const chart = window.TradingViewApi ||
+                                      (typeof TradingView !== 'undefined' && TradingView.activeChart && TradingView.activeChart());
+                        if (chart && chart.chartType) return chart.chartType();
+                        return -1;
+                    } catch { return -1; }
+                }
+            """)
+            if chart_type != 1:
+                # JS API로 직접 설정 시도
+                changed = await self.page.evaluate("""
+                    () => {
+                        try {
+                            const chart = window.TradingViewApi ||
+                                          (typeof TradingView !== 'undefined' && TradingView.activeChart && TradingView.activeChart());
+                            if (chart && chart.setChartType) { chart.setChartType(1); return true; }
+                            return false;
+                        } catch { return false; }
+                    }
+                """)
+                if changed:
+                    logger.info("차트 타입을 캔들스틱으로 변경 (JS API)")
+                    await asyncio.sleep(0.5)
+                else:
+                    # JS API 실패 시 UI 클릭으로 변경
+                    await self._set_candlestick_via_ui()
+        except Exception as e:
+            logger.warning(f"차트 타입 설정 중 오류 (무시): {e}")
+            await self._set_candlestick_via_ui()
+
+    async def _set_candlestick_via_ui(self):
+        """UI 클릭으로 캔들스틱 차트 타입 변경"""
+        try:
+            # 차트 타입 버튼 클릭 (툴바에서 차트 타입 드롭다운)
+            chart_type_btn = self.page.locator('#header-toolbar-chart-styles')
+            if await chart_type_btn.count() > 0:
+                await chart_type_btn.click(timeout=3000)
+                await asyncio.sleep(0.5)
+                # "캔들" 또는 "Candles" 옵션 선택
+                candle_option = self.page.locator('div[data-value="0"], div[data-value="1"]').first
+                if await candle_option.count() > 0:
+                    await candle_option.click(timeout=2000)
+                    logger.info("차트 타입을 캔들스틱으로 변경 (UI)")
+                    await asyncio.sleep(0.5)
+                else:
+                    # 텍스트로 찾기
+                    candle_text = self.page.locator('text=캔들, text=Candles, text=봉').first
+                    if await candle_text.count() > 0:
+                        await candle_text.click(timeout=2000)
+                        logger.info("차트 타입을 캔들스틱으로 변경 (텍스트)")
+                        await asyncio.sleep(0.5)
+                    else:
+                        await self.page.keyboard.press("Escape")
+                        logger.warning("캔들스틱 옵션을 찾을 수 없음")
+            else:
+                logger.warning("차트 타입 버튼을 찾을 수 없음")
+        except Exception as e:
+            logger.warning(f"UI로 차트 타입 변경 실패 (무시): {e}")
+
     async def _dismiss_popups(self):
         """TradingView 팝업/광고/배너 자동 닫기"""
         # 방법 0: tv-dialog__modal-container 전용 처리 (거래소 계약서 등)
