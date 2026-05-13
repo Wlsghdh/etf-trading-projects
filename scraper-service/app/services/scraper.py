@@ -280,67 +280,36 @@ class TradingViewScraper:
     async def _ensure_candlestick_chart(self):
         """차트 타입을 캔들스틱으로 설정 (라인 차트이면 OHLC 데이터가 CSV에 빠짐)"""
         try:
-            # TradingView 내부 API로 차트 타입 변경 (1 = Candles)
-            chart_type = await self.page.evaluate("""
-                () => {
-                    try {
-                        const chart = window.TradingViewApi ||
-                                      (typeof TradingView !== 'undefined' && TradingView.activeChart && TradingView.activeChart());
-                        if (chart && chart.chartType) return chart.chartType();
-                        return -1;
-                    } catch { return -1; }
-                }
-            """)
-            if chart_type != 1:
-                # JS API로 직접 설정 시도
-                changed = await self.page.evaluate("""
-                    () => {
-                        try {
-                            const chart = window.TradingViewApi ||
-                                          (typeof TradingView !== 'undefined' && TradingView.activeChart && TradingView.activeChart());
-                            if (chart && chart.setChartType) { chart.setChartType(1); return true; }
-                            return false;
-                        } catch { return false; }
-                    }
-                """)
-                if changed:
-                    logger.info("차트 타입을 캔들스틱으로 변경 (JS API)")
-                    await asyncio.sleep(0.5)
-                else:
-                    # JS API 실패 시 UI 클릭으로 변경
-                    await self._set_candlestick_via_ui()
-        except Exception as e:
-            logger.warning(f"차트 타입 설정 중 오류 (무시): {e}")
-            await self._set_candlestick_via_ui()
+            # 현재 차트 타입 확인
+            current_label = await self.page.locator(
+                '#header-toolbar-chart-styles button'
+            ).first.get_attribute('aria-label')
+            logger.info(f"현재 차트 타입: {current_label}")
 
-    async def _set_candlestick_via_ui(self):
-        """UI 클릭으로 캔들스틱 차트 타입 변경"""
-        try:
-            # 차트 타입 버튼 클릭 (툴바에서 차트 타입 드롭다운)
-            chart_type_btn = self.page.locator('#header-toolbar-chart-styles')
-            if await chart_type_btn.count() > 0:
-                await chart_type_btn.click(timeout=3000)
-                await asyncio.sleep(0.5)
-                # "캔들" 또는 "Candles" 옵션 선택
-                candle_option = self.page.locator('div[data-value="0"], div[data-value="1"]').first
-                if await candle_option.count() > 0:
-                    await candle_option.click(timeout=2000)
-                    logger.info("차트 타입을 캔들스틱으로 변경 (UI)")
-                    await asyncio.sleep(0.5)
-                else:
-                    # 텍스트로 찾기
-                    candle_text = self.page.locator('text=캔들, text=Candles, text=봉').first
-                    if await candle_text.count() > 0:
-                        await candle_text.click(timeout=2000)
-                        logger.info("차트 타입을 캔들스틱으로 변경 (텍스트)")
-                        await asyncio.sleep(0.5)
-                    else:
-                        await self.page.keyboard.press("Escape")
-                        logger.warning("캔들스틱 옵션을 찾을 수 없음")
+            if current_label and '캔들' in current_label:
+                logger.info("이미 캔들스틱 차트 — 변경 불필요")
+                return
+
+            # 차트 타입 드롭다운 열기
+            await self.page.locator('#header-toolbar-chart-styles button').first.click(timeout=5000)
+            await asyncio.sleep(1)
+
+            # '캔들' 옵션 클릭
+            candle = self.page.get_by_text('캔들', exact=True)
+            if await candle.count() > 0:
+                await candle.first.click(timeout=3000)
+                logger.info("차트 타입을 캔들스틱으로 변경 완료")
+                await asyncio.sleep(1)
+
+                # 레이아웃 저장 (Ctrl+S)
+                await self.page.keyboard.press("Control+s")
+                await asyncio.sleep(2)
+                logger.info("레이아웃 저장 완료 (Ctrl+S)")
             else:
-                logger.warning("차트 타입 버튼을 찾을 수 없음")
+                logger.warning("캔들 옵션을 찾을 수 없음")
+                await self.page.keyboard.press("Escape")
         except Exception as e:
-            logger.warning(f"UI로 차트 타입 변경 실패 (무시): {e}")
+            logger.warning(f"차트 타입 설정 중 오류: {e}")
 
     async def _dismiss_popups(self):
         """TradingView 팝업/광고/배너 자동 닫기"""
