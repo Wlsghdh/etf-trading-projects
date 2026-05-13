@@ -103,8 +103,10 @@ TIME_PERIODS = [
 # STOCK_LIST, NYSE_SYMBOLS, SECTOR_MAP은 상단 import에서 가져옴
 
 def get_exchange_prefix(symbol: str) -> str:
-    """심볼 반환 (거래소 접두사 없이 - TradingView가 자동 매칭)"""
-    return symbol
+    """거래소 접두사 포함 심볼 반환 (짧은 티커의 해외 거래소 충돌 방지)"""
+    if symbol in NYSE_SYMBOLS:
+        return f"NYSE:{symbol}"
+    return f"NASDAQ:{symbol}"
 
 # 컨테이너 환경 경로
 DOWNLOAD_DIR = Path(settings.download_dir)
@@ -191,6 +193,53 @@ class TradingViewScraper:
                 json.dump(cookies, f)
             logger.info(f"쿠키 저장됨: {len(cookies)}개")
 
+    async def _login_with_credentials(self):
+        """ID/PW로 TradingView 로그인 (쿠키 만료 시 사용)"""
+        username = settings.tradingview_username
+        password = settings.tradingview_password
+        if not username or not password:
+            logger.warning("TradingView 로그인 정보가 설정되지 않았습니다")
+            return False
+
+        logger.info(f"ID/PW로 로그인 시도: {username}")
+        try:
+            # 로그인 페이지로 직접 이동
+            await self.page.goto("https://kr.tradingview.com/accounts/signin/")
+            await self.page.wait_for_load_state("domcontentloaded")
+            await asyncio.sleep(3)
+
+            # 이메일 로그인 선택
+            email_btn = self.page.locator('button:has-text("이메일")')
+            if await email_btn.count() > 0:
+                await email_btn.click()
+                await asyncio.sleep(1)
+
+            # 유저네임/비밀번호 입력
+            username_input = self.page.get_by_role("textbox", name="유저네임 또는 이메일")
+            await username_input.fill(username, timeout=10000)
+            password_input = self.page.get_by_role("textbox", name="비밀번호")
+            await password_input.fill(password, timeout=10000)
+
+            # 로그인 버튼 클릭
+            submit_btn = self.page.locator('button[type="submit"], form button:has-text("로그인")')
+            await submit_btn.first.click()
+            await asyncio.sleep(8)
+
+            # 로그인 성공 확인 (차트 페이지로 리다이렉트 또는 프로필 아이콘 존재)
+            current_url = self.page.url
+            logged_in = await self.page.locator('button[aria-label*="로그인계정"], button[aria-label*="유저 메뉴"]').count()
+            if logged_in > 0 or "chart" in current_url:
+                logger.info("ID/PW 로그인 성공!")
+                await self.save_cookies()
+                return True
+            else:
+                logger.error("ID/PW 로그인 실패")
+                return False
+
+        except Exception as e:
+            logger.error(f"로그인 중 오류: {e}")
+            return False
+
     async def navigate_to_chart(self):
         """차트 페이지로 이동"""
         logger.info("차트 페이지로 이동 중...")
@@ -210,22 +259,81 @@ class TradingViewScraper:
 
         await asyncio.sleep(3)  # 추가 로딩 대기
 
+        # 로그인 여부 확인 — 안 되어 있으면 ID/PW로 로그인
+        logged_in = await self.page.locator('button[aria-label*="로그인계정"]').count()
+        if logged_in == 0:
+            logger.warning("쿠키 로그인 실패 — ID/PW로 재로그인 시도")
+            if await self._login_with_credentials():
+                # 로그인 후 차트 페이지로 다시 이동
+                await self.page.goto("https://kr.tradingview.com/chart/")
+                await self.page.wait_for_load_state("domcontentloaded")
+                await asyncio.sleep(5)
+        else:
+            logger.info("로그인 확인됨")
+
+        # 즐겨찾기 지표 등 사이드 패널 닫기
+        await self._dismiss_popups()
+
     async def _dismiss_popups(self):
         """TradingView 팝업/광고/배너 자동 닫기"""
+        # 방법 0: tv-dialog__modal-container 전용 처리 (거래소 계약서 등)
         try:
-            # 방법 1: X 버튼으로 팝업 닫기
+            modal = self.page.locator(".tv-dialog__modal-container")
+            if await modal.count() > 0:
+                logger.info("tv-dialog 모달 감지됨, 닫는 중...")
+                closed = False
+                for selector in [
+                    ".tv-dialog__modal-container button[aria-label='Close']",
+                    ".tv-dialog__modal-container button[aria-label='닫기']",
+                    ".tv-dialog__modal-container [class*='close']",
+                    ".tv-dialog__modal-container button:has(svg)",
+                ]:
+                    try:
+                        close_btn = self.page.locator(selector).first
+                        if await close_btn.count() > 0:
+                            await close_btn.click(timeout=2000)
+                            closed = True
+                            logger.info(f"tv-dialog 모달 닫기 성공: {selector}")
+                            break
+                    except Exception:
+                        continue
+                if not closed:
+                    await self.page.keyboard.press("Escape")
+                    await asyncio.sleep(0.5)
+                # 그래도 남아있으면 DOM에서 강제 제거
+                if await modal.count() > 0:
+                    try:
+                        await modal.first.evaluate("el => el.remove()")
+                        logger.info("tv-dialog 모달 강제 제거 완료")
+                    except Exception:
+                        pass
+                await asyncio.sleep(0.5)
+        except Exception as e:
+            logger.warning(f"tv-dialog 모달 닫기 중 오류 (무시): {e}")
+
+        try:
+            # 방법 1: 모달/다이얼로그의 X 버튼으로 닫기
             closed = await self.page.evaluate("""
                 () => {
                     let closed = 0;
-                    // 모달 닫기 버튼 (X)
-                    const closeButtons = document.querySelectorAll(
-                        'button[aria-label="Close"], button[aria-label="닫기"], ' +
-                        'svg[class*="close"], div[class*="close"] > svg, ' +
-                        'div[class*="modal"] button, div[class*="popup"] button, ' +
-                        'div[class*="overlay"] button[class*="close"]'
-                    );
-                    for (const btn of closeButtons) {
-                        try { btn.click(); closed++; } catch {}
+                    // 모달/다이얼로그 닫기 버튼 (X) — 거래소 계약서, 광고, 알림 등
+                    const closeSelectors = [
+                        'button[aria-label="Close"]',
+                        'button[aria-label="닫기"]',
+                        'div[class*="dialog"] button[class*="close"]',
+                        'div[class*="modal"] button[class*="close"]',
+                        'div[class*="popup"] button[class*="close"]',
+                        'div[class*="overlay"] button[class*="close"]',
+                        'div[data-dialog-name] button[class*="close"]',
+                        'div[class*="toast"] button[class*="close"]',
+                    ];
+                    for (const sel of closeSelectors) {
+                        const btns = document.querySelectorAll(sel);
+                        for (const btn of btns) {
+                            try {
+                                if (btn.offsetHeight > 0) { btn.click(); closed++; }
+                            } catch {}
+                        }
                     }
                     // 모달 배경 클릭으로 닫기
                     const overlays = document.querySelectorAll(
@@ -243,7 +351,31 @@ class TradingViewScraper:
         except Exception:
             pass
 
-        # 방법 2: ESC 키
+        # 방법 1.5: ESC 키로 남은 모달 닫기
+        try:
+            await self.page.keyboard.press("Escape")
+            await asyncio.sleep(0.3)
+        except Exception:
+            pass
+
+        # 방법 2: 즐겨찾기 지표 등 드롭다운/패널 닫기 - 차트 영역 클릭
+        try:
+            # 차트 캔버스 영역 클릭으로 떠있는 메뉴/패널 닫기
+            chart = self.page.locator('div[class*="chart-container"] canvas').first
+            if await chart.count() > 0:
+                box = await chart.bounding_box()
+                if box:
+                    # 차트 중앙 클릭
+                    await self.page.mouse.click(
+                        box["x"] + box["width"] / 2,
+                        box["y"] + box["height"] / 2
+                    )
+                    logger.info("차트 영역 클릭으로 패널 닫기 시도")
+                    await asyncio.sleep(0.5)
+        except Exception:
+            pass
+
+        # 방법 3: ESC 키
         try:
             await self.page.keyboard.press("Escape")
             await asyncio.sleep(0.3)
@@ -518,30 +650,21 @@ class TradingViewScraper:
         logger.info("차트 데이터 다운로드 시작...")
 
         try:
-            arrow_clicked = await self.page.evaluate("""
-                () => {
-                    const arrows = document.querySelectorAll('div[class*="arrow"]');
-                    if (arrows.length > 0) {
-                        arrows[0].click();
-                        return true;
-                    }
-                    return false;
-                }
-            """)
+            # 팝업/모달 닫기 (거래소 계약서 등)
+            await self._dismiss_popups()
 
-            if not arrow_clicked:
-                logger.warning("레이아웃 메뉴를 찾을 수 없습니다")
-                return None
-
+            # 레이아웃 관리 메뉴(save-load-menu) 클릭 → "차트 데이터 다운로드..." 선택
+            layout_menu = self.page.locator('button[data-name="save-load-menu"]')
+            await layout_menu.click(timeout=5000)
             await asyncio.sleep(0.5)
 
             try:
+                download_option = self.page.locator("text=차트 데이터 다운로드")
+                await download_option.click(timeout=5000)
+            except:
                 download_option = self.page.get_by_role(
                     "row", name="차트 데이터 다운로드"
                 )
-                await download_option.click(timeout=5000)
-            except:
-                download_option = self.page.locator("text=차트 데이터 다운로드")
                 await download_option.click(timeout=5000)
 
             await asyncio.sleep(0.5)
