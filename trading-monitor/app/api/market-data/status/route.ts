@@ -1,0 +1,18 @@
+import { NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
+const SCRAPER_URL = process.env.SCRAPER_SERVICE_URL || 'http://localhost:8001';
+
+export async function GET() {
+  try {
+    const res = await fetch(`${SCRAPER_URL}/market-data/status`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    const data = await res.json();
+    return NextResponse.json(data);
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'scraper-service 연결 실패' },
+      { status: 502 }
+    );
+  }
+}

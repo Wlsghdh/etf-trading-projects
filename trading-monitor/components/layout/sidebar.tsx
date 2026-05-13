@@ -36,6 +36,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: '/', label: '대시보드', icon: DashboardSquare01Icon },
   { href: '/scraping', label: '데이터 수집', icon: CloudDownloadIcon, adminOnly: true },
+  { href: '/market-data', label: '시장 데이터', icon: ChartLineData02Icon, adminOnly: true },
   { href: '/preprocessing', label: '데이터 전처리', icon: Layers01Icon, adminOnly: true },
   { href: '/model', label: 'ML 모니터링', icon: AiBrain02Icon, adminOnly: true },
   { href: '/pipeline', label: '파이프라인', icon: WorkflowSquare10Icon, adminOnly: true },
