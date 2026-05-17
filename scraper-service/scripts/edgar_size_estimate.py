@@ -57,27 +57,44 @@ def measure_filing(ticker: str, form: str) -> dict | None:
     """단일 종목의 최신 공시 1건을 받아 용량 측정"""
     try:
         company = Company(ticker)
-        filings = company.get_filings(form=form)
+        # amendments=False 로 정정공시(10-K/A 등) 제외 → 원본만 측정
+        filings = company.get_filings(form=form, amendments=False)
         if not filings:
             print(f"  [SKIP] {ticker} {form}: 공시 없음")
             return None
 
-        latest = filings.latest(1)
-        filing_obj = latest.obj()
+        # latest() 는 단일 Filing 객체 반환 (latest(1) 은 컬렉션)
+        filing = filings.latest()
 
-        # 원문 텍스트 크기 (bytes)
-        text_content = filing_obj.text if hasattr(filing_obj, "text") else ""
-        text_size_bytes = len(text_content.encode("utf-8")) if text_content else 0
+        # 원문 텍스트 크기 (bytes) — filing.text() 는 메서드
+        text_size_bytes = 0
+        try:
+            text_content = filing.text()
+            text_size_bytes = len(text_content.encode("utf-8")) if text_content else 0
+        except Exception as e:
+            print(f"  [WARN] {ticker} {form}: text() 실패 ({e})")
 
         # XBRL 재무수치 크기 (JSON 직렬화 기준)
         financials_size_bytes = 0
         try:
-            financials = filing_obj.financials if hasattr(filing_obj, "financials") else None
-            if financials is not None:
-                # 재무제표를 dict로 변환해 JSON 크기 측정
-                financials_json = json.dumps(
-                    financials.to_dict() if hasattr(financials, "to_dict") else str(financials)
-                )
+            xbrl = filing.xbrl()
+            if xbrl is not None:
+                # xbrl.to_pandas() 는 버전에 따라 DataFrame 또는 dict(of DataFrame) 반환
+                xbrl_data = xbrl.to_pandas()
+                if hasattr(xbrl_data, "to_json"):
+                    # 단일 DataFrame
+                    financials_json = xbrl_data.to_json(orient="records", date_format="iso")
+                elif isinstance(xbrl_data, dict):
+                    # dict of DataFrames — 각 항목 직렬화 후 합산
+                    serialized = {}
+                    for key, value in xbrl_data.items():
+                        if hasattr(value, "to_dict"):
+                            serialized[key] = value.to_dict(orient="records")
+                        else:
+                            serialized[key] = value
+                    financials_json = json.dumps(serialized, default=str)
+                else:
+                    financials_json = json.dumps(xbrl_data, default=str)
                 financials_size_bytes = len(financials_json.encode("utf-8"))
         except Exception as e:
             print(f"  [WARN] {ticker} {form}: XBRL 파싱 실패 ({e})")
@@ -85,7 +102,7 @@ def measure_filing(ticker: str, form: str) -> dict | None:
         return {
             "ticker": ticker,
             "form": form,
-            "filing_date": str(latest.filing_date) if hasattr(latest, "filing_date") else None,
+            "filing_date": str(filing.filing_date) if hasattr(filing, "filing_date") else None,
             "text_size_kb": round(text_size_bytes / 1024, 2),
             "financials_size_kb": round(financials_size_bytes / 1024, 2),
             "total_size_kb": round((text_size_bytes + financials_size_bytes) / 1024, 2),
@@ -156,11 +173,13 @@ def main() -> None:
     avg_xbrl = sum(r["financials_size_kb"] for r in results) / len(results)
     avg_total = sum(r["total_size_kb"] for r in results) / len(results)
 
-    # 전체 종목 기준 추정 (etf2_db 미국 종목 약 500개, 5년치 가정 - 추후 실측 필요)
+    # 실제 수집 대상: 1000 종목 중 ETF 63개 제외 = 937개 일반 기업
+    # (출처: scraper-service/config/symbols.yaml — total_symbols: 1000, ETF 섹션 63개)
+    # ETF는 10-K/10-Q 대신 N-CSR/N-1A 등 다른 form 을 제출하므로 제외
     estimate = estimate_total_storage(
         avg_text_kb=avg_text,
         avg_financials_kb=avg_xbrl,
-        num_symbols=500,
+        num_symbols=937,
         years=5,
     )
 
@@ -188,7 +207,7 @@ def main() -> None:
     print(f"평균 XBRL 재무:    {avg_xbrl:>10.2f} KB")
     print(f"평균 합계:         {avg_total:>10.2f} KB")
     print()
-    print("전체 추정 (500종목 × 5년 × 4건/년 = 10,000건 공시)")
+    print("전체 추정 (937종목 × 5년 × 4건/년 = 18,740건 공시, ETF 63개 제외)")
     print(f"  원문만 저장:     {estimate['text_only_mb']:>10.1f} MB")
     print(f"  XBRL만 저장:     {estimate['xbrl_only_mb']:>10.1f} MB")
     print(f"  둘 다 저장:      {estimate['both_mb']:>10.1f} MB ({estimate['both_gb']} GB)")
