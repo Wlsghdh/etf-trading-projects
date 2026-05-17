@@ -61,7 +61,7 @@ const EMPTY_STATUS = {
 async function fetchConfiguredTotal(): Promise<number | undefined> {
   try {
     const res = await fetch(
-      `${SCRAPER_SERVICE_URL}/api/scraper/jobs/symbols/configured`,
+      `${SCRAPER_SERVICE_URL}/jobs/symbols/configured`,
       { signal: AbortSignal.timeout(3000) }
     );
     if (!res.ok) return undefined;
@@ -75,7 +75,7 @@ async function fetchConfiguredTotal(): Promise<number | undefined> {
 export async function GET() {
   // status와 configured count를 병렬 조회
   const [statusResult, configuredTotal] = await Promise.all([
-    fetch(`${SCRAPER_SERVICE_URL}/api/scraper/jobs/status`, {
+    fetch(`${SCRAPER_SERVICE_URL}/jobs/status`, {
       signal: AbortSignal.timeout(5000),
     }).catch((err) => {
       console.log(

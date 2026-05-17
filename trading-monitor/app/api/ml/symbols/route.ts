@@ -18,7 +18,7 @@ export async function GET() {
   // 1차: scraper-service (yaml 기반 1000개 종목)
   try {
     const response = await fetch(
-      `${SCRAPER_SERVICE_URL}/api/scraper/jobs/symbols/configured`,
+      `${SCRAPER_SERVICE_URL}/jobs/symbols/configured`,
       { signal: AbortSignal.timeout(5000) }
     );
     if (response.ok) {
