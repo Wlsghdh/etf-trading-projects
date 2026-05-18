@@ -430,7 +430,6 @@ class TradingViewScraper:
         # 팝업/광고 자동 닫기 (Flash Sale 등)
         await self._dismiss_popups()
 
-        # 거래소 접두사 포함 심볼 (예: "NYSE:BA", "NASDAQ:AAPL")
         search_symbol = get_exchange_prefix(symbol)
         logger.info(f"심볼 검색: {search_symbol}")
 
@@ -438,10 +437,9 @@ class TradingViewScraper:
             # 상단 툴바의 심볼 검색 버튼 클릭 (고정 ID 사용)
             symbol_btn = self.page.locator("#header-toolbar-symbol-search")
             await symbol_btn.click(timeout=5000)
-
             await asyncio.sleep(1)
 
-            # 검색창에 심볼 입력 - "심볼, ISIN 또는 CUSIP" placeholder 사용
+            # 검색창 찾기
             search_input = (
                 self.page.get_by_role("searchbox")
                 .or_(self.page.get_by_placeholder("심볼, ISIN 또는 CUSIP"))
@@ -449,56 +447,53 @@ class TradingViewScraper:
                 .first
             )
 
-            # 기존 텍스트 지우고 새로 입력 (거래소 접두사 포함)
-            await search_input.clear()
-            await search_input.fill(search_symbol, timeout=10000)
-            await asyncio.sleep(1.5)  # 검색 결과 대기
+            # 검색창 확실히 비우기: triple-click으로 전체 선택 후 삭제
+            await search_input.click()
+            await self.page.keyboard.press("Control+a")
+            await self.page.keyboard.press("Backspace")
+            await asyncio.sleep(0.3)
+
+            # 한 글자씩 타이핑 (fill보다 검색 결과 트리거가 확실함)
+            await search_input.type(search_symbol, delay=50)
+            await asyncio.sleep(2)  # 검색 결과 로딩 대기 (충분히)
 
             # 검색 결과에서 해당 심볼 클릭
             clicked = False
 
-            # 방법 1: NASDAQ 거래소 주식 결과 클릭 (가장 일반적인 미국 주식)
+            # 방법 1: 첫 번째 리스트 아이템 클릭
             try:
-                logger.info("방법 1: 첫번째 아이템 클릭")
-                nasdaq_result = (
-                    self.page.locator('[data-role="list-item"]').first
-                )
-                await nasdaq_result.click(timeout=3000)
-                clicked = True
+                first_item = self.page.locator('[data-role="list-item"]').first
+                # 첫 번째 아이템의 텍스트에 심볼이 포함되어 있는지 확인
+                item_text = await first_item.text_content(timeout=3000)
+                if item_text and symbol.upper() in item_text.upper():
+                    await first_item.click(timeout=3000)
+                    clicked = True
+                    logger.info(f"방법 1: 첫번째 아이템 클릭 (텍스트: {item_text[:50]})")
+                else:
+                    logger.warning(f"방법 1: 첫 번째 결과가 '{symbol}'과 불일치 (텍스트: {item_text[:50] if item_text else 'None'})")
             except Exception as e:
                 logger.warning(f"방법 1 실패: {e}")
 
-            # 방법 2: NYSE 거래소 시도
+            # 방법 2: 검색 결과 중 심볼 텍스트를 정확히 포함하는 아이템 찾기
             if not clicked:
                 try:
-                    logger.info("방법 2: NYSE 거래소 시도")
-                    nyse_result = (
-                        self.page.get_by_text(f"{symbol}")
-                        .locator(
-                            "xpath=ancestor::*[contains(., 'NYSE') and contains(., 'stock')]"
-                        )
-                        .first
-                    )
-                    await nyse_result.click(timeout=3000)
-                    clicked = True
+                    logger.info("방법 2: 심볼 텍스트 매칭 아이템 검색")
+                    items = self.page.locator('[data-role="list-item"]')
+                    count = await items.count()
+                    for idx in range(min(count, 10)):
+                        item = items.nth(idx)
+                        text = await item.text_content(timeout=2000)
+                        if text and symbol.upper() in text.upper():
+                            await item.click(timeout=3000)
+                            clicked = True
+                            logger.info(f"방법 2: {idx+1}번째 아이템 클릭 (텍스트: {text[:50]})")
+                            break
                 except Exception as e:
                     logger.warning(f"방법 2 실패: {e}")
 
-            # 방법 3: 첫 번째 검색 결과 (심볼명과 거래소 텍스트를 포함하는 요소)
+            # 방법 3: Enter 키로 첫 번째 결과 선택 (최후 수단)
             if not clicked:
-                try:
-                    logger.info("방법 3: 첫 번째 검색 결과")
-                    first_result = self.page.locator(
-                        f'div:has(> div:has-text("{symbol}")):has-text("stock")'
-                    ).first
-                    await first_result.click(timeout=3000)
-                    clicked = True
-                except Exception as e:
-                    logger.warning(f"방법 3 실패: {e}")
-
-            # 방법 4: Enter 키로 첫 번째 결과 선택
-            if not clicked:
-                logger.info("방법 4: Enter 키로 첫 번째 결과 선택")
+                logger.info("방법 3: Enter 키로 첫 번째 결과 선택")
                 await self.page.keyboard.press("Enter")
                 await asyncio.sleep(0.5)
 
@@ -804,19 +799,57 @@ class TradingViewScraper:
             await self.page.keyboard.press("Escape")
             await asyncio.sleep(0.5)
 
-            # 레이아웃 관리 메뉴(save-load-menu) 클릭 → "차트 데이터 다운로드..." 선택
-            layout_menu = self.page.locator('button[data-name="save-load-menu"]')
-            await layout_menu.click(timeout=5000)
+            # 레이아웃 관리 메뉴 클릭 → "차트 데이터 다운로드..." 선택
+            # 방법 1: CSS 셀렉터 (PR에서 수정된 방식)
+            menu_opened = False
+            try:
+                await self.page.locator(
+                    "body > div.js-rootresizer__contents > div > div.layout__area-top > div > div > div:nth-child(3) > div.wrapOverflow-wXGVFOC9 > div > div > div > div > div:nth-child(14) > div > div > div > button > div"
+                ).click(timeout=5000)
+                menu_opened = True
+            except Exception:
+                pass
+            # 방법 2: data-name 속성 (기존 방식)
+            if not menu_opened:
+                try:
+                    await self.page.locator('button[data-name="save-load-menu"]').click(timeout=5000)
+                    menu_opened = True
+                except Exception:
+                    pass
+            if not menu_opened:
+                logger.error("레이아웃 메뉴를 열 수 없음")
+                return None
+
             await asyncio.sleep(0.5)
 
+            # "차트 데이터 다운로드" 메뉴 항목 클릭
+            download_clicked = False
+            # 방법 1: CSS 셀렉터 (PR 방식)
             try:
-                download_option = self.page.locator("text=차트 데이터 다운로드")
-                await download_option.click(timeout=5000)
-            except:
-                download_option = self.page.get_by_role(
-                    "row", name="차트 데이터 다운로드"
-                )
-                await download_option.click(timeout=5000)
+                await self.page.locator(
+                    "#overlap-manager-root > div:nth-child(2) > span > div.menu-Uy_he976.menuWrap-XktvVkFF > div > div > div > div > div:nth-child(6) > div > div > div.middle-fY6nuScj.hasTitle-fY6nuScj.hasNoEndSlot-fY6nuScj > div > span"
+                ).click(timeout=5000)
+                download_clicked = True
+            except Exception:
+                pass
+            # 방법 2: 텍스트 매칭 (기존 방식)
+            if not download_clicked:
+                try:
+                    await self.page.locator("text=차트 데이터 다운로드").click(timeout=5000)
+                    download_clicked = True
+                except Exception:
+                    pass
+            # 방법 3: role 매칭
+            if not download_clicked:
+                try:
+                    await self.page.get_by_role("row", name="차트 데이터 다운로드").click(timeout=5000)
+                    download_clicked = True
+                except Exception:
+                    pass
+            if not download_clicked:
+                logger.error("차트 데이터 다운로드 메뉴를 찾을 수 없음")
+                await self.page.keyboard.press("Escape")
+                return None
 
             await asyncio.sleep(1)
 
@@ -848,7 +881,14 @@ class TradingViewScraper:
                     break  # 다른 텍스트면 시도해봄
 
             async with self.page.expect_download(timeout=120000) as download_info:
-                await download_btn.click()
+                # 방법 1: CSS 셀렉터 (PR 방식)
+                try:
+                    await self.page.locator(
+                        "#overlap-manager-root > div:nth-child(2) > div > div.dialog-qyCw0PaN.popupDialog-B02UUUN3.dialog-f4TzBb9d.rounded-f4TzBb9d.shadowed-f4TzBb9d > div > div > div.footer-B02UUUN3 > button.actionButton-k53vexPa.button-KoxY3d86.small-KoxY3d86.black-KoxY3d86.primary-KoxY3d86.apply-overflow-tooltip.apply-overflow-tooltip-check-children-recursively.apply-overflow-tooltip-allow-text.apply-common-tooltip > span > span"
+                    ).click(timeout=5000)
+                except Exception:
+                    # 방법 2: role 매칭 (기존 방식)
+                    await download_btn.click()
 
             download = await download_info.value
 
