@@ -504,7 +504,7 @@ class TradingViewScraper:
                 await self.page.keyboard.press("Enter")
                 await asyncio.sleep(0.5)
 
-            await asyncio.sleep(2)  # 차트 로딩 대기
+            await asyncio.sleep(3)  # 차트 로딩 대기 (미존재 심볼 메시지 렌더링 시간 포함)
 
             # === 심볼 검증: 차트에 표시된 심볼이 요청한 심볼과 일치하는지 확인 ===
             verified = await self._verify_chart_symbol(symbol)
@@ -524,17 +524,81 @@ class TradingViewScraper:
             await asyncio.sleep(0.5)
             return False
 
+    async def _check_symbol_not_found(self) -> bool:
+        """
+        차트에 "이 심볼은 존재하지 않습니다" 메시지가 표시되는지 확인.
+        여러 패턴을 종합적으로 체크.
+
+        Returns:
+            심볼이 존재하지 않으면 True (= 스킵해야 함)
+        """
+        try:
+            not_found = await self.page.evaluate("""
+                () => {
+                    const body = document.body.innerText || '';
+
+                    // 1. 직접적인 "심볼 미존재" 텍스트 감지
+                    if (body.includes('심볼은 존재하지 않습니다')) return 'text_not_found';
+                    if (body.includes('Symbol not found')) return 'text_not_found';
+                    if (body.includes('Invalid symbol')) return 'text_not_found';
+
+                    // 2. "심볼 바꾸기" 버튼 감지 (미존재 심볼 페이지에만 표시)
+                    const buttons = document.querySelectorAll('button');
+                    for (const btn of buttons) {
+                        const text = btn.textContent.trim();
+                        if (text === '심볼 바꾸기' || text === 'Change Symbol') return 'change_symbol_btn';
+                    }
+
+                    // 3. 에러 아이콘 감지: 헤더에 빨간 X 에러 표시 (시O 고O 저O 종O 모두 0)
+                    //    스크린샷에서 보면 "시O 고O 저O 종O 0 (0%) 볼륨O" 패턴
+                    const headerText = document.querySelector('[class*="headerWrapper"]')?.innerText || '';
+                    if (headerText && /시.?0.*고.?0.*저.?0.*종.?0/.test(headerText)) return 'zero_ohlc';
+
+                    // 4. 차트 헤더의 에러 상태 아이콘 감지 (빨간 X)
+                    const errorIcon = document.querySelector('[class*="statusItem"][class*="error"]') ||
+                                     document.querySelector('[class*="main-"] svg[class*="error"]');
+                    if (errorIcon) return 'error_icon';
+
+                    // 5. 분석을 위해 다른 항목을 선택해 보세요 텍스트 감지
+                    if (body.includes('분석을 위해 다른 항목을 선택해 보세요')) return 'select_other';
+
+                    // 6. 인터벌 제한 메시지 감지 (D, W, M만 가능한 심볼)
+                    if (body.includes('인터벌만 사용 가능합니다')) return 'interval_limited';
+                    if (body.includes('다른 시간 간격을 선택하세요')) return 'interval_limited';
+
+                    // 7. "D 인터벌로 전환" 버튼 감지
+                    for (const btn of buttons) {
+                        const text = btn.textContent.trim();
+                        if (text.includes('인터벌로 전환')) return 'interval_switch_btn';
+                    }
+
+                    return false;
+                }
+            """)
+            if not_found:
+                logger.info(f"심볼 미존재 감지 방법: {not_found}")
+            return bool(not_found)
+        except Exception:
+            return False
+
     async def _verify_chart_symbol(self, expected_symbol: str) -> bool:
         """
         차트에 현재 표시된 심볼이 기대하는 심볼과 일치하는지 검증.
+        심볼이 존재하지 않으면 False 반환.
 
         Args:
             expected_symbol: 기대하는 심볼 (예: "AAPL", "CSCO")
 
         Returns:
-            일치하면 True
+            일치하면 True, 심볼 미존재면 False
         """
         try:
+            # 심볼 미존재 감지 (가장 중요!)
+            if await self._check_symbol_not_found():
+                logger.error(f"심볼 미존재 감지: {expected_symbol} - TradingView에서 이 심볼을 찾을 수 없음")
+                _db_log("ERROR", f"심볼 미존재: TradingView에서 찾을 수 없음", symbol=expected_symbol)
+                return False
+
             # 방법 1: 상단 툴바의 심볼 텍스트에서 확인
             chart_symbol = await self.page.evaluate("""
                 () => {
@@ -552,9 +616,21 @@ class TradingViewScraper:
                 }
             """)
 
-            if chart_symbol and expected_symbol.upper() in chart_symbol.upper():
-                logger.info(f"심볼 검증 성공: 차트={chart_symbol}, 기대={expected_symbol}")
-                return True
+            if chart_symbol:
+                # 엄격한 매칭: 심볼이 정확히 포함되어야 함 (ALTR ≠ ALTRCAX)
+                import re
+                # "AAPL" 또는 "NYSE:AAPL" 패턴에서 심볼 부분만 추출하여 비교
+                chart_upper = chart_symbol.upper()
+                expected_upper = expected_symbol.upper()
+                # 정확한 단어 경계 매칭 (심볼 뒤에 다른 알파벳이 오면 불일치)
+                pattern = rf'\b{re.escape(expected_upper)}\b'
+                if re.search(pattern, chart_upper):
+                    logger.info(f"심볼 검증 성공: 차트={chart_symbol}, 기대={expected_symbol}")
+                    return True
+                else:
+                    logger.warning(f"심볼 불일치: 차트={chart_symbol}, 기대={expected_symbol}")
+                    # 잘못된 심볼이 선택됨 - False 반환
+                    return False
 
             # 방법 2: 페이지 타이틀에서 확인
             page_title = await self.page.title()
@@ -566,7 +642,7 @@ class TradingViewScraper:
                 f"심볼 불일치 가능: 차트={chart_symbol}, 타이틀={page_title}, "
                 f"기대={expected_symbol}. 계속 진행합니다."
             )
-            # 경고만 하고 진행 (false positive 방지)
+            # 차트 심볼을 알 수 없는 경우에만 경고 후 진행
             return True
 
         except Exception as e:
@@ -596,6 +672,14 @@ class TradingViewScraper:
         """
         logger.info(f"시간 단위 변경: {button_text}")
 
+        # 시간 단위 변경 전 심볼 미존재 체크
+        if await self._check_symbol_not_found():
+            logger.warning(f"시간 단위 변경 스킵: 심볼 미존재 상태 ({button_text})")
+            return False
+
+        # 시간 단위 변경 전 팝업/모달 정리
+        await self._dismiss_popups()
+
         # 시도할 셀렉터 목록 (우선순위 순)
         selectors = [
             # 방법 1: 하단 날짜 범위 바에서 data-value 또는 value 속성으로 찾기
@@ -614,8 +698,12 @@ class TradingViewScraper:
         for i, selector in enumerate(selectors):
             try:
                 btn = self.page.locator(selector).first
-                await btn.click(timeout=3000)
-                await asyncio.sleep(2)
+                await btn.click(timeout=5000)
+                await asyncio.sleep(3)
+                # 시간 단위 변경 후 인터벌 제한 메시지 체크
+                if await self._check_symbol_not_found():
+                    logger.warning(f"시간 단위 변경 후 인터벌 제한/심볼 미존재 감지: {button_text}")
+                    return False
                 logger.info(f"시간 단위 변경 완료 (방법 {i+1}): {button_text}")
                 return True
             except Exception:
@@ -639,6 +727,9 @@ class TradingViewScraper:
             """)
             if clicked:
                 await asyncio.sleep(2)
+                if await self._check_symbol_not_found():
+                    logger.warning(f"시간 단위 변경 후 인터벌 제한/심볼 미존재 감지 (JS): {button_text}")
+                    return False
                 logger.info(f"시간 단위 변경 완료 (JS): {button_text}")
                 return True
         except Exception:
@@ -649,6 +740,9 @@ class TradingViewScraper:
             btn = self.page.get_by_role("button", name=button_text, exact=True)
             await btn.click(timeout=3000)
             await asyncio.sleep(2)
+            if await self._check_symbol_not_found():
+                logger.warning(f"시간 단위 변경 후 인터벌 제한/심볼 미존재 감지 (role): {button_text}")
+                return False
             logger.info(f"시간 단위 변경 완료 (role): {button_text}")
             return True
         except Exception:
@@ -676,7 +770,7 @@ class TradingViewScraper:
         self, output_filename: Optional[str] = None
     ) -> Optional[Path]:
         """
-        차트 데이터를 CSV로 다운로드 (기존 코드와 동일)
+        차트 데이터를 CSV로 다운로드
 
         Args:
             output_filename: 출력 파일명 (없으면 자동 생성)
@@ -687,27 +781,81 @@ class TradingViewScraper:
         logger.info("차트 데이터 다운로드 시작...")
 
         try:
-            # 팝업/모달 닫기 (거래소 계약서 등)
+            # 다운로드 전 심볼 미존재 재확인 (시간 단위 변경 후 감지 가능)
+            if await self._check_symbol_not_found():
+                logger.warning("다운로드 스킵: 심볼 미존재 상태")
+                return None
+
+            # 팝업/모달 닫기 (거래소 계약서 등 + 이전 다운로드 다이얼로그)
             await self._dismiss_popups()
+            # ESC로 혹시 남아있는 다이얼로그 닫기
+            await self.page.keyboard.press("Escape")
+            await asyncio.sleep(0.5)
 
             # 레이아웃 관리 메뉴(save-load-menu) 클릭 → "차트 데이터 다운로드..." 선택
-            layout_menu = self.page.locator('button[data-name="save-load-menu"]')
-            await layout_menu.click(timeout=5000)
-            await asyncio.sleep(0.5)
+            # 메뉴가 안 열릴 수 있으므로 2번 시도
+            download_menu_opened = False
+            for menu_attempt in range(2):
+                try:
+                    layout_menu = self.page.locator('button[data-name="save-load-menu"]')
+                    await layout_menu.click(timeout=5000)
+                    await asyncio.sleep(0.8)
 
+                    # "차트 데이터 다운로드" 텍스트 찾기 (여러 방법)
+                    download_option = self.page.locator("text=차트 데이터 다운로드").first
+                    if await download_option.count() > 0:
+                        await download_option.click(timeout=5000)
+                        download_menu_opened = True
+                        break
+                    # 대체: role로 시도
+                    download_option = self.page.get_by_role("row", name="차트 데이터 다운로드")
+                    if await download_option.count() > 0:
+                        await download_option.click(timeout=5000)
+                        download_menu_opened = True
+                        break
+                except Exception as e:
+                    if menu_attempt == 0:
+                        logger.warning(f"메뉴 열기 실패 (시도 1/2), ESC 후 재시도: {e}")
+                        await self.page.keyboard.press("Escape")
+                        await asyncio.sleep(1)
+                        await self._dismiss_popups()
+
+            if not download_menu_opened:
+                logger.error("차트 데이터 다운로드 메뉴를 열 수 없음")
+                await self.page.keyboard.press("Escape")
+                await asyncio.sleep(0.5)
+                return None
+
+            await asyncio.sleep(1)
+
+            # 다운로드 버튼 대기 및 로딩 상태 감지
+            download_btn = self.page.get_by_role("button", name="다운로드")
             try:
-                download_option = self.page.locator("text=차트 데이터 다운로드")
-                await download_option.click(timeout=5000)
-            except:
-                download_option = self.page.get_by_role(
-                    "row", name="차트 데이터 다운로드"
-                )
-                await download_option.click(timeout=5000)
+                await download_btn.wait_for(state="visible", timeout=10000)
+            except Exception:
+                logger.warning("다운로드 버튼을 찾을 수 없음 - 데이터 없는 심볼일 수 있음")
+                await self.page.keyboard.press("Escape")
+                await asyncio.sleep(0.5)
+                return None
 
-            await asyncio.sleep(0.5)
+            # 다운로드 버튼이 로딩 상태("...")인지 확인 (최대 15초 대기)
+            for wait_attempt in range(5):
+                btn_text = await download_btn.text_content()
+                if btn_text and '다운로드' in btn_text:
+                    break  # 버튼 준비됨
+                if btn_text and btn_text.strip() in ('...', '···', '…', ''):
+                    if wait_attempt < 4:
+                        logger.info(f"다운로드 버튼 로딩 중... ({wait_attempt + 1}/5)")
+                        await asyncio.sleep(3)
+                    else:
+                        logger.warning("다운로드 버튼이 로딩 상태에서 벗어나지 않음 - 데이터 없는 심볼")
+                        await self.page.keyboard.press("Escape")
+                        await asyncio.sleep(0.5)
+                        return None
+                else:
+                    break  # 다른 텍스트면 시도해봄
 
-            async with self.page.expect_download(timeout=60000) as download_info:
-                download_btn = self.page.get_by_role("button", name="다운로드")
+            async with self.page.expect_download(timeout=120000) as download_info:
                 await download_btn.click()
 
             download = await download_info.value
@@ -725,8 +873,11 @@ class TradingViewScraper:
         except Exception as e:
             logger.error(f"다운로드 실패: {e}")
             await self.capture_screenshot(f"download_fail")
-            # ESC로 다이얼로그 닫기
-            await self.page.keyboard.press("Escape")
+            # ESC로 다이얼로그 닫기 (여러 번 시도)
+            for _ in range(3):
+                await self.page.keyboard.press("Escape")
+                await asyncio.sleep(0.5)
+            await self._dismiss_popups()
             return None
 
     async def process_single_stock(self, symbol: str, max_retries: int = 3) -> dict:
@@ -743,22 +894,44 @@ class TradingViewScraper:
         results = {}
 
         # 심볼 선택 (재시도)
+        symbol_selected = False
         for attempt in range(max_retries):
             if await self.search_and_select_symbol(symbol):
+                symbol_selected = True
                 break
             else:
+                # 심볼 미존재인 경우 재시도 없이 즉시 스킵
+                if await self._check_symbol_not_found():
+                    logger.warning(f"심볼 미존재 확인: {symbol} - 재시도 없이 스킵")
+                    _db_log("WARNING", f"심볼 미존재 - 스킵", symbol=symbol)
+                    for period in TIME_PERIODS:
+                        await task_info_manager.update_timeframe_status(
+                            symbol, period["name"], TimeframeStatus.FAILED,
+                            error="심볼 미존재 (TradingView에서 찾을 수 없음)"
+                        )
+                    return results
                 if attempt < max_retries - 1:
                     logger.warning(f"심볼 선택 실패 (시도 {attempt + 1}/{max_retries}). 재시도 중...")
                     await asyncio.sleep(2)
                 else:
                     logger.error(f"심볼 선택 최종 실패: {symbol}")
-                    # 모든 timeframe을 실패로 표시
                     for period in TIME_PERIODS:
                         await task_info_manager.update_timeframe_status(
                             symbol, period["name"], TimeframeStatus.FAILED,
                             error="심볼 선택 실패"
                         )
                     return results
+
+        # 심볼은 선택됐지만 데이터가 없는 경우 (심볼 미존재 재확인)
+        if symbol_selected and await self._check_symbol_not_found():
+            logger.warning(f"심볼 선택 후 미존재 감지: {symbol} - 스킵")
+            _db_log("WARNING", f"심볼 데이터 없음 - 스킵", symbol=symbol)
+            for period in TIME_PERIODS:
+                await task_info_manager.update_timeframe_status(
+                    symbol, period["name"], TimeframeStatus.FAILED,
+                    error="심볼 데이터 없음 (TradingView에서 찾을 수 없음)"
+                )
+            return results
 
         # 각 시간대별로 데이터 수집
         for period in TIME_PERIODS:
@@ -773,7 +946,7 @@ class TradingViewScraper:
                 symbol, period_name, TimeframeStatus.DOWNLOADING
             )
 
-            # 시간 단위 변경 (재시도)
+            # 시간 단위 변경 (재시도 with exponential backoff)
             time_change_success = False
             for attempt in range(max_retries):
                 if await self.change_time_period(button_text):
@@ -781,8 +954,10 @@ class TradingViewScraper:
                     break
                 else:
                     if attempt < max_retries - 1:
-                        logger.warning(f"시간 단위 변경 실패 (시도 {attempt + 1}/{max_retries}). 재시도 중...")
-                        await asyncio.sleep(2)
+                        wait_time = 2 * (attempt + 1)  # 2s, 4s, 6s...
+                        logger.warning(f"시간 단위 변경 실패 (시도 {attempt + 1}/{max_retries}). {wait_time}초 후 재시도...")
+                        await self._dismiss_popups()
+                        await asyncio.sleep(wait_time)
 
             if not time_change_success:
                 logger.error(f"시간 단위 변경 최종 실패: {button_text}")
@@ -807,8 +982,10 @@ class TradingViewScraper:
                     break
                 else:
                     if attempt < max_retries - 1:
-                        logger.warning(f"다운로드 실패 (시도 {attempt + 1}/{max_retries}). 재시도 중...")
-                        await asyncio.sleep(2)
+                        wait_time = 3 * (attempt + 1)  # 3s, 6s, 9s...
+                        logger.warning(f"다운로드 실패 (시도 {attempt + 1}/{max_retries}). {wait_time}초 후 재시도...")
+                        await self._dismiss_popups()
+                        await asyncio.sleep(wait_time)
 
             if file_path:
                 results[period_name] = file_path
