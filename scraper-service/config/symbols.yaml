@@ -39,7 +39,7 @@ sectors:
     - { symbol: FTNT, exchange: NASDAQ }
     - { symbol: MPWR, exchange: NASDAQ }
     - { symbol: IT, exchange: NYSE }
-    - { symbol: "ON", exchange: NASDAQ }  # ON Semiconductor (YAML boolean 충돌 방지)
+    - { symbol: TER, exchange: NASDAQ }
     - { symbol: FSLR, exchange: NASDAQ }
     - { symbol: CTSH, exchange: NASDAQ }
     - { symbol: ANSS, exchange: NASDAQ }
@@ -72,7 +72,7 @@ sectors:
     - { symbol: FICO, exchange: NYSE }
     - { symbol: PLTR, exchange: NASDAQ }
     - { symbol: HUBB, exchange: NYSE }
-    - { symbol: BR, exchange: NYSE }
+    - { symbol: SSNC, exchange: NASDAQ }
     - { symbol: ANET, exchange: NYSE }
     - { symbol: INTC, exchange: NASDAQ }
     - { symbol: APP, exchange: NASDAQ }
@@ -87,10 +87,10 @@ sectors:
     - { symbol: HUBS, exchange: NYSE }
     - { symbol: WDAY, exchange: NASDAQ }
     - { symbol: VEEV, exchange: NYSE }
-    - { symbol: U, exchange: NYSE }
+    - { symbol: ASML, exchange: NASDAQ }
     - { symbol: PATH, exchange: NYSE }
     - { symbol: CFLT, exchange: NASDAQ }
-    - { symbol: S, exchange: NYSE }
+    - { symbol: CHKP, exchange: NASDAQ }
     - { symbol: GTLB, exchange: NASDAQ }
     - { symbol: IOT, exchange: NYSE }
     - { symbol: BILL, exchange: NYSE }
@@ -165,7 +165,7 @@ sectors:
     - { symbol: STNE, exchange: NASDAQ }
     - { symbol: PAGS, exchange: NYSE }
     - { symbol: BEKE, exchange: NYSE }
-    - { symbol: AI, exchange: NYSE }
+    - { symbol: TEAM, exchange: NASDAQ }
     - { symbol: CRNC, exchange: NASDAQ }
     - { symbol: DLO, exchange: NASDAQ }
     - { symbol: BTDR, exchange: NASDAQ }
@@ -223,7 +223,7 @@ sectors:
     - { symbol: VTRS, exchange: NASDAQ }
     - { symbol: XRAY, exchange: NASDAQ }
     - { symbol: DVA, exchange: NYSE }
-    - { symbol: LH, exchange: NYSE }
+    - { symbol: EXEL, exchange: NASDAQ }
     - { symbol: DGX, exchange: NYSE }
     - { symbol: INCY, exchange: NASDAQ }
     - { symbol: MRNA, exchange: NASDAQ }
@@ -356,11 +356,11 @@ sectors:
     - { symbol: RJF, exchange: NYSE }
     - { symbol: L, exchange: NYSE }
     - { symbol: RE, exchange: NYSE }
-    - { symbol: EG, exchange: NYSE }
+    - { symbol: LBRDA, exchange: NASDAQ }
     - { symbol: TROW, exchange: NASDAQ }
     - { symbol: IVZ, exchange: NYSE }
     - { symbol: BEN, exchange: NYSE }
-    - { symbol: GL, exchange: NYSE }
+    - { symbol: PEGA, exchange: NASDAQ }
     - { symbol: AIZ, exchange: NYSE }
     - { symbol: MKTX, exchange: NASDAQ }
     - { symbol: CBOE, exchange: NASDAQ }
@@ -398,7 +398,7 @@ sectors:
     - { symbol: PIPR, exchange: NYSE }
     - { symbol: EVR, exchange: NYSE }
     - { symbol: HLI, exchange: NYSE }
-    - { symbol: SF, exchange: NYSE }
+    - { symbol: SIRI, exchange: NASDAQ }
     - { symbol: SEIC, exchange: NASDAQ }
     - { symbol: VIRT, exchange: NASDAQ }
     - { symbol: PYPL, exchange: NASDAQ }
@@ -419,7 +419,7 @@ sectors:
     - { symbol: OWL, exchange: NYSE }
     - { symbol: ARES, exchange: NYSE }
     - { symbol: APO, exchange: NYSE }
-    - { symbol: CG, exchange: NASDAQ }
+    - { symbol: MORN, exchange: NASDAQ }
     - { symbol: TPG, exchange: NASDAQ }
     - { symbol: HLNE, exchange: NYSE }
     - { symbol: VCTR, exchange: NASDAQ }
@@ -477,7 +477,7 @@ sectors:
     - { symbol: CCL, exchange: NYSE }
     - { symbol: NCLH, exchange: NYSE }
     - { symbol: TPR, exchange: NYSE }
-    - { symbol: RL, exchange: NYSE }
+    - { symbol: NTES, exchange: NASDAQ }
     - { symbol: HAS, exchange: NASDAQ }
     - { symbol: LKQ, exchange: NASDAQ }
     - { symbol: BWA, exchange: NYSE }
@@ -487,7 +487,7 @@ sectors:
     - { symbol: LULU, exchange: NASDAQ }
     - { symbol: RIVN, exchange: NASDAQ }
     - { symbol: LCID, exchange: NASDAQ }
-    - { symbol: W, exchange: NYSE }
+    - { symbol: PDD, exchange: NASDAQ }
     - { symbol: CVNA, exchange: NYSE }
     - { symbol: DASH, exchange: NASDAQ }
     - { symbol: CART, exchange: NASDAQ }
@@ -506,14 +506,14 @@ sectors:
     - { symbol: GAP, exchange: NYSE }
     - { symbol: AEO, exchange: NYSE }
     - { symbol: FIVE, exchange: NASDAQ }
-    - { symbol: RH, exchange: NYSE }
+    - { symbol: WIX, exchange: NASDAQ }
     - { symbol: WSM, exchange: NYSE }
     - { symbol: PENN, exchange: NASDAQ }
     - { symbol: DKNG, exchange: NASDAQ }
     - { symbol: CHWY, exchange: NYSE }
     - { symbol: DKS, exchange: NYSE }
-    - { symbol: FL, exchange: NYSE }
-    - { symbol: BJ, exchange: NYSE }
+    - { symbol: TRIP, exchange: NASDAQ }
+    - { symbol: CCEP, exchange: NASDAQ }
     - { symbol: DUOL, exchange: NASDAQ }
     - { symbol: TCOM, exchange: NASDAQ }
     - { symbol: BURL, exchange: NYSE }
@@ -701,12 +701,12 @@ sectors:
     - { symbol: KTOS, exchange: NASDAQ }
     - { symbol: MRCY, exchange: NASDAQ }
     - { symbol: HXL, exchange: NYSE }
-    - { symbol: CW, exchange: NYSE }
+    - { symbol: AMKR, exchange: NASDAQ }
     - { symbol: ACHR, exchange: NYSE }
     - { symbol: JOBY, exchange: NYSE }
     - { symbol: LUNR, exchange: NASDAQ }
     - { symbol: PLUG, exchange: NASDAQ }
-    - { symbol: BE, exchange: NYSE }
+    - { symbol: ENTG, exchange: NASDAQ }
     - { symbol: VRT, exchange: NYSE }
     - { symbol: LOAR, exchange: NYSE }
     - { symbol: SKYW, exchange: NASDAQ }
@@ -748,10 +748,10 @@ sectors:
     - { symbol: HRL, exchange: NYSE }
     - { symbol: CPB, exchange: NASDAQ }
     - { symbol: CAG, exchange: NYSE }
-    - { symbol: BG, exchange: NYSE }
+    - { symbol: KDP, exchange: NASDAQ }
     - { symbol: TSN, exchange: NYSE }
     - { symbol: TAP, exchange: NYSE }
-    - { symbol: LW, exchange: NYSE }
+    - { symbol: LOGI, exchange: NASDAQ }
     - { symbol: CELH, exchange: NASDAQ }
     - { symbol: SAM, exchange: NYSE }
     - { symbol: USFD, exchange: NYSE }
@@ -794,22 +794,22 @@ sectors:
     - { symbol: EQT, exchange: NYSE }
     - { symbol: APA, exchange: NASDAQ }
     - { symbol: MRO, exchange: NYSE }
-    - { symbol: AR, exchange: NYSE }
+    - { symbol: FLEX, exchange: NASDAQ }
     - { symbol: RRC, exchange: NYSE }
-    - { symbol: SM, exchange: NYSE }
+    - { symbol: IOVA, exchange: NASDAQ }
     - { symbol: OVV, exchange: NYSE }
     - { symbol: CHRD, exchange: NASDAQ }
     - { symbol: MGY, exchange: NYSE }
     - { symbol: MTDR, exchange: NYSE }
-    - { symbol: PR, exchange: NYSE }
+    - { symbol: BIDU, exchange: NASDAQ }
     - { symbol: NOV, exchange: NYSE }
     - { symbol: CHX, exchange: NYSE }
     - { symbol: FTI, exchange: NYSE }
-    - { symbol: HP, exchange: NYSE }
+    - { symbol: IRDM, exchange: NASDAQ }
     - { symbol: PTEN, exchange: NASDAQ }
     - { symbol: LBRT, exchange: NYSE }
     - { symbol: DTM, exchange: NYSE }
-    - { symbol: AM, exchange: NYSE }
+    - { symbol: VNOM, exchange: NASDAQ }
     - { symbol: ENLC, exchange: NYSE }
     - { symbol: DINO, exchange: NYSE }
     - { symbol: PBF, exchange: NYSE }
@@ -831,7 +831,7 @@ sectors:
     - { symbol: D, exchange: NYSE }
     - { symbol: EXC, exchange: NASDAQ }
     - { symbol: PCG, exchange: NYSE }
-    - { symbol: ED, exchange: NYSE }
+    - { symbol: NTNX, exchange: NASDAQ }
     - { symbol: XEL, exchange: NASDAQ }
     - { symbol: EIX, exchange: NYSE }
     - { symbol: WEC, exchange: NYSE }
@@ -839,7 +839,7 @@ sectors:
     - { symbol: DTE, exchange: NYSE }
     - { symbol: ES, exchange: NYSE }
     - { symbol: ETR, exchange: NYSE }
-    - { symbol: FE, exchange: NYSE }
+    - { symbol: FWONK, exchange: NASDAQ }
     - { symbol: PPL, exchange: NYSE }
     - { symbol: CMS, exchange: NYSE }
     - { symbol: ATO, exchange: NYSE }
@@ -876,13 +876,13 @@ sectors:
     - { symbol: MLM, exchange: NYSE }
     - { symbol: CTVA, exchange: NYSE }
     - { symbol: IFF, exchange: NYSE }
-    - { symbol: CF, exchange: NYSE }
+    - { symbol: ALGM, exchange: NASDAQ }
     - { symbol: MOS, exchange: NYSE }
     - { symbol: ALB, exchange: NYSE }
     - { symbol: FMC, exchange: NYSE }
-    - { symbol: CE, exchange: NYSE }
+    - { symbol: CGNX, exchange: NASDAQ }
     - { symbol: EMN, exchange: NYSE }
-    - { symbol: IP, exchange: NYSE }
+    - { symbol: DBX, exchange: NASDAQ }
     - { symbol: PKG, exchange: NYSE }
     - { symbol: STLD, exchange: NASDAQ }
     - { symbol: RS, exchange: NYSE }
@@ -893,7 +893,7 @@ sectors:
     - { symbol: RPM, exchange: NYSE }
     - { symbol: BALL, exchange: NYSE }
     - { symbol: AA, exchange: NYSE }
-    - { symbol: X, exchange: NYSE }
+    - { symbol: GFS, exchange: NASDAQ }
     - { symbol: CLF, exchange: NYSE }
     - { symbol: CMC, exchange: NYSE }
     - { symbol: RGLD, exchange: NASDAQ }
@@ -903,9 +903,9 @@ sectors:
     - { symbol: KGC, exchange: NYSE }
     - { symbol: GOLD, exchange: NYSE }
     - { symbol: TECK, exchange: NYSE }
-    - { symbol: MP, exchange: NYSE }
+    - { symbol: NVCR, exchange: NASDAQ }
     - { symbol: AXTA, exchange: NYSE }
-    - { symbol: CC, exchange: NYSE }
+    - { symbol: SMTC, exchange: NASDAQ }
     - { symbol: HUN, exchange: NYSE }
     - { symbol: OLN, exchange: NYSE }
     - { symbol: SMG, exchange: NYSE }
@@ -949,12 +949,12 @@ sectors:
     - { symbol: CSGP, exchange: NASDAQ }
     - { symbol: REXR, exchange: NYSE }
     - { symbol: STAG, exchange: NYSE }
-    - { symbol: FR, exchange: NYSE }
+    - { symbol: DOCU, exchange: NASDAQ }
     - { symbol: CUBE, exchange: NYSE }
     - { symbol: NNN, exchange: NYSE }
     - { symbol: ADC, exchange: NYSE }
     - { symbol: EPRT, exchange: NYSE }
-    - { symbol: SUI, exchange: NYSE }
+    - { symbol: VRNT, exchange: NASDAQ }
     - { symbol: ELS, exchange: NYSE }
     - { symbol: RHP, exchange: NYSE }
     - { symbol: OHI, exchange: NYSE }
