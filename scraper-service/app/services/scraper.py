@@ -103,10 +103,8 @@ TIME_PERIODS = [
 # STOCK_LIST, NYSE_SYMBOLS, SECTOR_MAP은 상단 import에서 가져옴
 
 def get_exchange_prefix(symbol: str) -> str:
-    """거래소 접두사 포함 심볼 반환 (짧은 티커의 해외 거래소 충돌 방지)"""
-    if symbol in NYSE_SYMBOLS:
-        return f"NYSE:{symbol}"
-    return f"NASDAQ:{symbol}"
+    """심볼 반환 (거래소 접두사 없이 심볼만 사용)"""
+    return symbol
 
 # 컨테이너 환경 경로
 DOWNLOAD_DIR = Path(settings.download_dir)
@@ -504,7 +502,11 @@ class TradingViewScraper:
                 await self.page.keyboard.press("Enter")
                 await asyncio.sleep(0.5)
 
-            await asyncio.sleep(3)  # 차트 로딩 대기 (미존재 심볼 메시지 렌더링 시간 포함)
+            await asyncio.sleep(2)
+
+            # 검색 다이얼로그가 남아있을 수 있으므로 ESC로 닫기
+            await self.page.keyboard.press("Escape")
+            await asyncio.sleep(2)  # 차트 로딩 + 미존재 메시지 렌더링 대기
 
             # === 심볼 검증: 차트에 표시된 심볼이 요청한 심볼과 일치하는지 확인 ===
             verified = await self._verify_chart_symbol(symbol)
@@ -535,12 +537,16 @@ class TradingViewScraper:
         try:
             not_found = await self.page.evaluate("""
                 () => {
+                    // 차트 영역과 전체 body 모두 확인
+                    const chartArea = document.querySelector('[class*="chart-container"]');
+                    const chartText = chartArea ? chartArea.innerText : '';
                     const body = document.body.innerText || '';
+                    const allText = chartText + ' ' + body;
 
                     // 1. 직접적인 "심볼 미존재" 텍스트 감지
-                    if (body.includes('심볼은 존재하지 않습니다')) return 'text_not_found';
-                    if (body.includes('Symbol not found')) return 'text_not_found';
-                    if (body.includes('Invalid symbol')) return 'text_not_found';
+                    if (allText.includes('심볼은 존재하지 않습니다')) return 'text_not_found';
+                    if (allText.includes('Symbol not found')) return 'text_not_found';
+                    if (allText.includes('Invalid symbol')) return 'text_not_found';
 
                     // 2. "심볼 바꾸기" 버튼 감지 (미존재 심볼 페이지에만 표시)
                     const buttons = document.querySelectorAll('button');
@@ -625,6 +631,12 @@ class TradingViewScraper:
                 # 정확한 단어 경계 매칭 (심볼 뒤에 다른 알파벳이 오면 불일치)
                 pattern = rf'\b{re.escape(expected_upper)}\b'
                 if re.search(pattern, chart_upper):
+                    # 심볼 이름은 맞지만 데이터가 없을 수 있음 (CTRA, MRO 등)
+                    # 한 번 더 미존재 체크
+                    if await self._check_symbol_not_found():
+                        logger.error(f"심볼 이름 일치하나 데이터 없음: {expected_symbol}")
+                        _db_log("ERROR", f"심볼 데이터 없음: 이름은 맞으나 TradingView에 데이터 없음", symbol=expected_symbol)
+                        return False
                     logger.info(f"심볼 검증 성공: 차트={chart_symbol}, 기대={expected_symbol}")
                     return True
                 else:
@@ -793,38 +805,18 @@ class TradingViewScraper:
             await asyncio.sleep(0.5)
 
             # 레이아웃 관리 메뉴(save-load-menu) 클릭 → "차트 데이터 다운로드..." 선택
-            # 메뉴가 안 열릴 수 있으므로 2번 시도
-            download_menu_opened = False
-            for menu_attempt in range(2):
-                try:
-                    layout_menu = self.page.locator('button[data-name="save-load-menu"]')
-                    await layout_menu.click(timeout=5000)
-                    await asyncio.sleep(0.8)
+            layout_menu = self.page.locator('button[data-name="save-load-menu"]')
+            await layout_menu.click(timeout=5000)
+            await asyncio.sleep(0.5)
 
-                    # "차트 데이터 다운로드" 텍스트 찾기 (여러 방법)
-                    download_option = self.page.locator("text=차트 데이터 다운로드").first
-                    if await download_option.count() > 0:
-                        await download_option.click(timeout=5000)
-                        download_menu_opened = True
-                        break
-                    # 대체: role로 시도
-                    download_option = self.page.get_by_role("row", name="차트 데이터 다운로드")
-                    if await download_option.count() > 0:
-                        await download_option.click(timeout=5000)
-                        download_menu_opened = True
-                        break
-                except Exception as e:
-                    if menu_attempt == 0:
-                        logger.warning(f"메뉴 열기 실패 (시도 1/2), ESC 후 재시도: {e}")
-                        await self.page.keyboard.press("Escape")
-                        await asyncio.sleep(1)
-                        await self._dismiss_popups()
-
-            if not download_menu_opened:
-                logger.error("차트 데이터 다운로드 메뉴를 열 수 없음")
-                await self.page.keyboard.press("Escape")
-                await asyncio.sleep(0.5)
-                return None
+            try:
+                download_option = self.page.locator("text=차트 데이터 다운로드")
+                await download_option.click(timeout=5000)
+            except:
+                download_option = self.page.get_by_role(
+                    "row", name="차트 데이터 다운로드"
+                )
+                await download_option.click(timeout=5000)
 
             await asyncio.sleep(1)
 
