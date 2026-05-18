@@ -563,6 +563,11 @@ class TradingViewScraper:
                     // 5. 분석을 위해 다른 항목을 선택해 보세요 텍스트 감지
                     if (body.includes('분석을 위해 다른 항목을 선택해 보세요')) return 'select_other';
 
+                    // 5.5. "데이터 없음" 감지 (심볼은 있지만 데이터가 없는 경우)
+                    if (allText.includes('데이터 없음')) return 'no_data';
+                    if (allText.includes('No data')) return 'no_data';
+                    if (body.includes('곧 차트에 나타나길 바랍니다')) return 'no_data';
+
                     // 6. 인터벌 제한 메시지 감지 (D, W, M만 가능한 심볼)
                     if (body.includes('인터벌만 사용 가능합니다')) return 'interval_limited';
                     if (body.includes('다른 시간 간격을 선택하세요')) return 'interval_limited';
