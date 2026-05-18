@@ -799,17 +799,19 @@ class TradingViewScraper:
             await self.page.keyboard.press("Escape")
             await asyncio.sleep(0.5)
 
+            # === 디버그: 메뉴 클릭 전 스크린샷 ===
+            await self.capture_screenshot("debug_before_menu")
+
             # 레이아웃 관리 메뉴 클릭 → "차트 데이터 다운로드..." 선택
-            # 방법 1: CSS 셀렉터 (PR에서 수정된 방식)
             menu_opened = False
+            # 방법 1: role 매칭 (Playwright MCP로 확인된 정확한 셀렉터)
             try:
-                await self.page.locator(
-                    "body > div.js-rootresizer__contents > div > div.layout__area-top > div > div > div:nth-child(3) > div.wrapOverflow-wXGVFOC9 > div > div > div > div > div:nth-child(14) > div > div > div > button > div"
-                ).click(timeout=5000)
+                await self.page.get_by_role("button", name="레이아웃 관리").click(timeout=5000)
                 menu_opened = True
-            except Exception:
-                pass
-            # 방법 2: data-name 속성 (기존 방식)
+                logger.info("메뉴 열기 성공: 레이아웃 관리")
+            except Exception as e:
+                logger.warning(f"레이아웃 관리 버튼 실패: {e}")
+            # 방법 2: data-name 속성 (구버전 호환)
             if not menu_opened:
                 try:
                     await self.page.locator('button[data-name="save-load-menu"]').click(timeout=5000)
@@ -818,36 +820,55 @@ class TradingViewScraper:
                     pass
             if not menu_opened:
                 logger.error("레이아웃 메뉴를 열 수 없음")
+                await self.capture_screenshot("debug_menu_fail")
                 return None
 
             await asyncio.sleep(0.5)
 
+            # === 디버그: 메뉴 열린 후 스크린샷 ===
+            await self.capture_screenshot("debug_menu_opened")
+
             # "차트 데이터 다운로드" 메뉴 항목 클릭
-            download_clicked = False
-            # 방법 1: CSS 셀렉터 (PR 방식)
-            try:
-                await self.page.locator(
-                    "#overlap-manager-root > div:nth-child(2) > span > div.menu-Uy_he976.menuWrap-XktvVkFF > div > div > div > div > div:nth-child(6) > div > div > div.middle-fY6nuScj.hasTitle-fY6nuScj.hasNoEndSlot-fY6nuScj > div > span"
-                ).click(timeout=5000)
-                download_clicked = True
-            except Exception:
-                pass
-            # 방법 2: 텍스트 매칭 (기존 방식)
-            if not download_clicked:
+            download_menu_clicked = False
+            for dl_attempt in range(3):
                 try:
-                    await self.page.locator("text=차트 데이터 다운로드").click(timeout=5000)
-                    download_clicked = True
-                except Exception:
-                    pass
-            # 방법 3: role 매칭
-            if not download_clicked:
+                    dl_row = self.page.get_by_role("row", name="차트 데이터 다운로드")
+                    if await dl_row.count() > 0:
+                        await dl_row.click(timeout=5000)
+                        download_menu_clicked = True
+                        logger.info("차트 데이터 다운로드 클릭 성공 (role)")
+                        break
+                except Exception as e:
+                    logger.warning(f"다운로드 메뉴 role 시도 {dl_attempt+1} 실패: {e}")
+
+                # fallback: 텍스트 매칭
                 try:
-                    await self.page.get_by_role("row", name="차트 데이터 다운로드").click(timeout=5000)
-                    download_clicked = True
-                except Exception:
-                    pass
-            if not download_clicked:
+                    dl_text = self.page.locator("text=차트 데이터 다운로드")
+                    if await dl_text.count() > 0:
+                        await dl_text.first.click(timeout=5000)
+                        download_menu_clicked = True
+                        logger.info("차트 데이터 다운로드 클릭 성공 (text)")
+                        break
+                except Exception as e:
+                    logger.warning(f"다운로드 메뉴 text 시도 {dl_attempt+1} 실패: {e}")
+
+                # 메뉴가 닫혔을 수 있으므로 다시 열기
+                if dl_attempt < 2:
+                    logger.info("메뉴 재열기 시도...")
+                    await self.page.keyboard.press("Escape")
+                    await asyncio.sleep(0.5)
+                    try:
+                        await self.page.get_by_role("button", name="레이아웃 관리").click(timeout=5000)
+                    except Exception:
+                        try:
+                            await self.page.locator('button[data-name="save-load-menu"]').click(timeout=5000)
+                        except Exception:
+                            pass
+                    await asyncio.sleep(0.5)
+
+            if not download_menu_clicked:
                 logger.error("차트 데이터 다운로드 메뉴를 찾을 수 없음")
+                await self.capture_screenshot("debug_download_menu_fail")
                 await self.page.keyboard.press("Escape")
                 return None
 
@@ -881,14 +902,7 @@ class TradingViewScraper:
                     break  # 다른 텍스트면 시도해봄
 
             async with self.page.expect_download(timeout=120000) as download_info:
-                # 방법 1: CSS 셀렉터 (PR 방식)
-                try:
-                    await self.page.locator(
-                        "#overlap-manager-root > div:nth-child(2) > div > div.dialog-qyCw0PaN.popupDialog-B02UUUN3.dialog-f4TzBb9d.rounded-f4TzBb9d.shadowed-f4TzBb9d > div > div > div.footer-B02UUUN3 > button.actionButton-k53vexPa.button-KoxY3d86.small-KoxY3d86.black-KoxY3d86.primary-KoxY3d86.apply-overflow-tooltip.apply-overflow-tooltip-check-children-recursively.apply-overflow-tooltip-allow-text.apply-common-tooltip > span > span"
-                    ).click(timeout=5000)
-                except Exception:
-                    # 방법 2: role 매칭 (기존 방식)
-                    await download_btn.click()
+                await download_btn.click()
 
             download = await download_info.value
 
