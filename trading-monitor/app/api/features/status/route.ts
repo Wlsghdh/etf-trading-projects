@@ -6,7 +6,7 @@ const SCRAPER_SERVICE_URL = process.env.SCRAPER_SERVICE_URL || 'http://localhost
 
 export async function GET() {
   try {
-    const response = await fetch(`${SCRAPER_SERVICE_URL}/api/scraper/features/status`, {
+    const response = await fetch(`${SCRAPER_SERVICE_URL}/features/status`, {
       signal: AbortSignal.timeout(5000),
     });
     if (response.ok) {

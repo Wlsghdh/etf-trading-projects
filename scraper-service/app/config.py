@@ -12,7 +12,11 @@ class Settings(BaseSettings):
     # Directories
     log_dir: str = "/app/logs"
     download_dir: str = "/app/downloads"
-    cookies_file: str = "/app/cookies.json"
+    cookies_file: str = "/app/cookies/cookies.json"
+
+    # TradingView credentials
+    tradingview_username: str = ""
+    tradingview_password: str = ""
 
     # Scraper settings
     headless: bool = True

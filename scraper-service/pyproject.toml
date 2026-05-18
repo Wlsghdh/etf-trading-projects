@@ -24,6 +24,7 @@ pymysql = "^1.1.0"
 sshtunnel = "^0.4.0"
 paramiko = ">=2.0,<3"
 python-dotenv = "^1.0.0"
+pyyaml = "^6.0"
 # Corporate actions & feature processing
 yfinance = "^1.1.0"
 pandas-ta = ">=0.3.14b0"

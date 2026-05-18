@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { CandlestickChart } from '@/components/chart/candlestick-chart';
 import { useChartData } from '@/hooks/use-chart-data';
+import { useTheme } from '@/hooks/use-theme';
 import type { ForecastDataPoint } from '@/lib/chart-types';
 
 interface SymbolDetailModalProps {
@@ -68,6 +69,7 @@ export function SymbolDetailModal({
   const tvContainerRef = useRef<HTMLDivElement>(null);
   const [showForecast, setShowForecast] = useState(false);
   const { data: chartData, isLoading: chartLoading } = useChartData(symbol, 'D', 200);
+  const theme = useTheme();
 
   // ESC
   useEffect(() => {
@@ -102,7 +104,7 @@ export function SymbolDetailModal({
       symbol: tvSymbol,
       interval: 'D',
       timezone: 'Asia/Seoul',
-      theme: 'dark',
+      theme,
       style: '1',
       locale: 'kr',
       hide_top_toolbar: false,
@@ -127,7 +129,7 @@ export function SymbolDetailModal({
     tvContainerRef.current.appendChild(wrapper);
 
     return () => { if (tvContainerRef.current) tvContainerRef.current.innerHTML = ''; };
-  }, [symbol, showForecast]);
+  }, [symbol, showForecast, theme, tvSymbol]);
 
   // 예측 데이터
   const actualPrice = chartData?.data?.length ? chartData.data[chartData.data.length - 1].close : currentPrice;

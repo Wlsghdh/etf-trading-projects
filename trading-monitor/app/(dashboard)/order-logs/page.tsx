@@ -30,7 +30,7 @@ interface TradingLogEntry {
 type LogLevelFilter = 'ALL' | 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR';
 
 const LEVEL_COLORS: Record<string, string> = {
-  DEBUG: 'text-neutral-500',
+  DEBUG: 'text-muted-foreground',
   INFO: 'text-amber-600',
   WARNING: 'text-amber-500',
   ERROR: 'text-red-500',
@@ -39,15 +39,15 @@ const LEVEL_COLORS: Record<string, string> = {
 function getStatusBadge(status: string) {
   switch (status.toUpperCase()) {
     case 'SUCCESS':
-      return <Badge className="bg-amber-900/30 text-amber-400 border border-amber-700/40 text-[10px] uppercase tracking-wider">Filled</Badge>;
+      return <Badge className="bg-amber-500/10 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-500/50 dark:border-amber-700/40 text-[10px] uppercase tracking-wider">Filled</Badge>;
     case 'FAILED':
-      return <Badge className="bg-red-950/40 text-red-400 border border-red-800/40 text-[10px] uppercase tracking-wider">Failed</Badge>;
+      return <Badge className="bg-red-500/10 text-red-700 dark:bg-red-950/40 dark:text-red-600 dark:text-red-400 border border-red-500/50 dark:border-red-800/40 text-[10px] uppercase tracking-wider">Failed</Badge>;
     case 'PENDING':
-      return <Badge className="bg-amber-950/30 text-amber-300 border border-amber-700/30 text-[10px] uppercase tracking-wider">Pending</Badge>;
+      return <Badge className="bg-amber-500/10 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 border border-amber-500/40 dark:border-amber-700/30 text-[10px] uppercase tracking-wider">Pending</Badge>;
     case 'UNFILLED':
-      return <Badge className="bg-neutral-900/50 text-neutral-400 border border-neutral-700/40 text-[10px] uppercase tracking-wider">Unfilled</Badge>;
+      return <Badge className="bg-muted/50 dark:bg-muted/50 text-foreground/70 dark:bg-neutral-900/50 dark:text-neutral-400 border border-border dark:border-neutral-700/40 text-[10px] uppercase tracking-wider">Unfilled</Badge>;
     case 'CANCELLED':
-      return <Badge className="bg-neutral-900/50 text-neutral-500 border border-neutral-700/30 text-[10px] uppercase tracking-wider">Cancelled</Badge>;
+      return <Badge className="bg-muted/50 dark:bg-muted/50 text-muted-foreground dark:bg-neutral-900/50 border border-border dark:border-neutral-700/30 text-[10px] uppercase tracking-wider">Cancelled</Badge>;
     default:
       return <Badge variant="outline" className="text-[10px]">{status}</Badge>;
   }
@@ -55,12 +55,12 @@ function getStatusBadge(status: string) {
 
 function getOrderTypeBadge(orderType: string) {
   if (orderType.includes('SELL')) {
-    return <span className="font-mono text-xs font-semibold text-red-400">SELL</span>;
+    return <span className="font-mono text-xs font-semibold text-red-600 dark:text-red-400">SELL</span>;
   }
   if (orderType === 'BUY_FIXED') {
-    return <span className="font-mono text-xs font-semibold text-amber-400">BUY<sup className="text-[8px] text-amber-600">F</sup></span>;
+    return <span className="font-mono text-xs font-semibold text-amber-700 dark:text-amber-400">BUY<sup className="text-[8px] text-amber-700 dark:text-amber-600">F</sup></span>;
   }
-  return <span className="font-mono text-xs font-semibold text-emerald-400">BUY</span>;
+  return <span className="font-mono text-xs font-semibold text-emerald-600 dark:text-emerald-400">BUY</span>;
 }
 
 function formatDateTime(iso: string) {
@@ -112,40 +112,40 @@ function TradingLogViewer() {
   };
 
   return (
-    <Card className="border-amber-900/20 bg-neutral-950/50">
+    <Card className="border-amber-500/30 dark:border-amber-900/20 bg-card dark:bg-neutral-950/50">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium tracking-wide text-amber-200/80">
+          <CardTitle className="text-sm font-medium tracking-wide text-amber-700 dark:text-amber-200/80">
             Trading Service Log
           </CardTitle>
           <div className="flex items-center gap-2">
             {(['ALL', 'INFO', 'WARNING', 'ERROR'] as LogLevelFilter[]).map(l => (
               <button key={l} onClick={() => setLogLevel(l)}
                 className={`px-2 py-0.5 text-[10px] uppercase tracking-wider rounded transition-colors ${
-                  logLevel === l ? 'bg-amber-900/40 text-amber-300 border border-amber-700/40' : 'text-neutral-500 hover:text-neutral-300'
+                  logLevel === l ? 'bg-amber-500/15 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-500/50 dark:border-amber-700/40' : 'text-muted-foreground hover:text-foreground dark:text-neutral-300'
                 }`}>{l}</button>
             ))}
             <button onClick={() => setAutoRefresh(!autoRefresh)}
               className={`px-2 py-0.5 text-[10px] uppercase tracking-wider rounded font-mono ${
-                autoRefresh ? 'bg-amber-900/30 text-amber-400' : 'text-neutral-600'
+                autoRefresh ? 'bg-amber-500/10 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 'text-muted-foreground'
               }`}>{autoRefresh ? 'LIVE' : 'PAUSED'}</button>
           </div>
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="border-t border-amber-900/20">
+        <div className="border-t border-amber-500/30 dark:border-amber-900/20">
           <div ref={containerRef} onScroll={handleScroll}
-            className="h-[300px] overflow-y-auto bg-neutral-950 p-3 font-mono text-[11px]">
+            className="h-[300px] overflow-y-auto bg-muted dark:bg-neutral-950 p-3 font-mono text-[11px]">
             {logs.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-neutral-600">No logs</div>
+              <div className="flex h-full items-center justify-center text-muted-foreground">No logs</div>
             ) : (
               <div className="space-y-0">
                 {[...logs].reverse().map(log => (
-                  <div key={log.id} className={`flex gap-2 py-px ${log.level === 'ERROR' ? 'bg-red-950/20' : ''}`}>
-                    <span className="text-neutral-700 shrink-0">{fmtTime(log.timestamp)}</span>
-                    <span className={`shrink-0 w-14 ${LEVEL_COLORS[log.level] || 'text-neutral-500'}`}>{log.level}</span>
+                  <div key={log.id} className={`flex gap-2 py-px ${log.level === 'ERROR' ? 'bg-red-500/5 dark:bg-red-950/20' : ''}`}>
+                    <span className="text-muted-foreground/70 shrink-0">{fmtTime(log.timestamp)}</span>
+                    <span className={`shrink-0 w-14 ${LEVEL_COLORS[log.level] || 'text-muted-foreground'}`}>{log.level}</span>
                     {log.symbol && <span className="text-amber-700 shrink-0">[{log.symbol}]</span>}
-                    <span className="text-neutral-400">{log.message}</span>
+                    <span className="text-foreground/70 dark:text-neutral-400">{log.message}</span>
                   </div>
                 ))}
               </div>
@@ -214,24 +214,24 @@ export default function OrderLogsPage() {
       {/* 통계 카드 - 잭다니엘 스타일 */}
       <div className="grid gap-3 md:grid-cols-5">
         {[
-          { label: 'Filled', value: successCount, color: 'text-amber-400', border: 'border-amber-900/30' },
-          { label: 'Failed', value: failedCount, color: 'text-red-400', border: 'border-red-900/30' },
-          { label: 'Pending', value: pendingCount, color: 'text-amber-300', border: 'border-amber-800/20' },
-          { label: 'Unfilled', value: unfilledCount, color: 'text-neutral-400', border: 'border-neutral-800/30' },
-          { label: 'Volume', value: null, color: 'text-amber-200', border: 'border-amber-900/20' },
+          { label: 'Filled', value: successCount, color: 'text-amber-700 dark:text-amber-400', border: 'border-amber-500/40 dark:border-amber-900/30' },
+          { label: 'Failed', value: failedCount, color: 'text-red-600 dark:text-red-400', border: 'border-red-500/40 dark:border-red-900/30' },
+          { label: 'Pending', value: pendingCount, color: 'text-amber-700 dark:text-amber-300', border: 'border-amber-500/30 dark:border-amber-800/20' },
+          { label: 'Unfilled', value: unfilledCount, color: 'text-foreground/70 dark:text-neutral-400', border: 'border-border dark:border-neutral-800/30' },
+          { label: 'Volume', value: null, color: 'text-amber-700 dark:text-amber-200', border: 'border-amber-500/30 dark:border-amber-900/20' },
         ].map((stat, i) => (
-          <Card key={i} className={`${stat.border} bg-neutral-950/50`}>
+          <Card key={i} className={`${stat.border} bg-card dark:bg-neutral-950/50`}>
             <CardContent className="pt-4 pb-3">
-              <div className="text-[10px] uppercase tracking-widest text-neutral-500">{stat.label}</div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{stat.label}</div>
               {stat.value !== null ? (
                 <div className={`text-2xl font-light font-mono ${stat.color}`}>{stat.value}</div>
               ) : (
                 <div>
-                  <div className="text-lg font-light font-mono text-amber-200">
+                  <div className="text-lg font-light font-mono text-amber-700 dark:text-amber-200">
                     ${todayTotalUSD.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                   </div>
                   {exchangeRate > 0 && (
-                    <div className="text-[10px] text-neutral-600">{formatKRW(todayTotalUSD * exchangeRate)}</div>
+                    <div className="text-[10px] text-muted-foreground">{formatKRW(todayTotalUSD * exchangeRate)}</div>
                   )}
                 </div>
               )}
@@ -244,20 +244,20 @@ export default function OrderLogsPage() {
       <TradingLogViewer />
 
       {/* 주문 테이블 */}
-      <Card className="border-amber-900/20 bg-neutral-950/50">
+      <Card className="border-amber-500/30 dark:border-amber-900/20 bg-card dark:bg-neutral-950/50">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-medium tracking-wide text-amber-200/80">
+            <CardTitle className="text-sm font-medium tracking-wide text-amber-700 dark:text-amber-200/80">
               Order History
-              <span className="ml-2 text-[10px] text-neutral-600 font-normal">{total} orders</span>
+              <span className="ml-2 text-[10px] text-muted-foreground font-normal">{total} orders</span>
             </CardTitle>
             <div className="flex items-center gap-1">
               {filterOptions.map(f => (
                 <button key={f} onClick={() => { setStatusFilter(f); setPage(1); }}
                   className={`px-2.5 py-1 text-[10px] uppercase tracking-wider rounded transition-colors ${
                     statusFilter === f
-                      ? 'bg-amber-900/40 text-amber-300 border border-amber-700/40'
-                      : 'text-neutral-500 hover:text-neutral-300'
+                      ? 'bg-amber-500/15 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-500/50 dark:border-amber-700/40'
+                      : 'text-muted-foreground hover:text-foreground dark:text-neutral-300'
                   }`}>
                   {f === 'ALL' ? 'All' : f}
                 </button>
@@ -267,23 +267,23 @@ export default function OrderLogsPage() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <div className="flex items-center justify-center py-12 text-neutral-600 text-sm">Loading...</div>
+            <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Loading...</div>
           ) : orders.length === 0 ? (
-            <div className="flex items-center justify-center py-12 text-neutral-600 text-sm">No orders found</div>
+            <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">No orders found</div>
           ) : (
             <>
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow className="border-amber-900/20 hover:bg-transparent">
-                      <TableHead className="w-[50px] text-[10px] uppercase tracking-widest text-neutral-600">#</TableHead>
-                      <TableHead className="w-[60px] text-[10px] uppercase tracking-widest text-neutral-600">Side</TableHead>
-                      <TableHead className="w-[70px] text-[10px] uppercase tracking-widest text-neutral-600">Symbol</TableHead>
-                      <TableHead className="w-[50px] text-right text-[10px] uppercase tracking-widest text-neutral-600">Qty</TableHead>
-                      <TableHead className="w-[100px] text-right text-[10px] uppercase tracking-widest text-neutral-600">Price</TableHead>
-                      <TableHead className="w-[80px] text-[10px] uppercase tracking-widest text-neutral-600">Status</TableHead>
-                      <TableHead className="w-[100px] text-[10px] uppercase tracking-widest text-neutral-600">Time</TableHead>
-                      <TableHead className="text-[10px] uppercase tracking-widest text-neutral-600">Note</TableHead>
+                    <TableRow className="border-amber-500/30 dark:border-amber-900/20 hover:bg-transparent">
+                      <TableHead className="w-[50px] text-[10px] uppercase tracking-widest text-muted-foreground">#</TableHead>
+                      <TableHead className="w-[60px] text-[10px] uppercase tracking-widest text-muted-foreground">Side</TableHead>
+                      <TableHead className="w-[70px] text-[10px] uppercase tracking-widest text-muted-foreground">Symbol</TableHead>
+                      <TableHead className="w-[50px] text-right text-[10px] uppercase tracking-widest text-muted-foreground">Qty</TableHead>
+                      <TableHead className="w-[100px] text-right text-[10px] uppercase tracking-widest text-muted-foreground">Price</TableHead>
+                      <TableHead className="w-[80px] text-[10px] uppercase tracking-widest text-muted-foreground">Status</TableHead>
+                      <TableHead className="w-[100px] text-[10px] uppercase tracking-widest text-muted-foreground">Time</TableHead>
+                      <TableHead className="text-[10px] uppercase tracking-widest text-muted-foreground">Note</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -292,38 +292,38 @@ export default function OrderLogsPage() {
                       const isSuccess = order.status === 'SUCCESS';
                       return (
                         <TableRow key={order.id}
-                          className={`border-amber-900/10 transition-colors ${
-                            isFailed ? 'bg-red-950/15 hover:bg-red-950/25' :
-                            isSuccess ? 'hover:bg-amber-950/20' :
-                            'hover:bg-neutral-900/50'
+                          className={`border-amber-500/20 dark:border-amber-900/10 transition-colors ${
+                            isFailed ? 'bg-red-500/5 hover:bg-red-500/10 dark:bg-red-950/15 dark:hover:bg-red-950/25' :
+                            isSuccess ? 'hover:bg-amber-500/10 dark:hover:bg-amber-950/20' :
+                            'hover:bg-muted/50 dark:bg-neutral-900/50'
                           }`}>
-                          <TableCell className="font-mono text-[11px] text-neutral-600">{order.id}</TableCell>
+                          <TableCell className="font-mono text-[11px] text-muted-foreground">{order.id}</TableCell>
                           <TableCell>{getOrderTypeBadge(order.orderType)}</TableCell>
-                          <TableCell className="font-mono font-semibold text-sm text-amber-100">{order.etfCode}</TableCell>
-                          <TableCell className="text-right font-mono text-sm text-neutral-300">{order.quantity}</TableCell>
+                          <TableCell className="font-mono font-semibold text-sm text-amber-800 dark:text-amber-100">{order.etfCode}</TableCell>
+                          <TableCell className="text-right font-mono text-sm text-foreground dark:text-neutral-300">{order.quantity}</TableCell>
                           <TableCell className="text-right font-mono text-sm">
                             {order.price != null && order.price > 0 ? (
                               <div>
-                                <span className={isSuccess ? 'text-amber-200' : 'text-neutral-400'}>
+                                <span className={isSuccess ? 'text-amber-700 dark:text-amber-200' : 'text-foreground/70 dark:text-neutral-400'}>
                                   ${order.price.toFixed(2)}
                                 </span>
                                 {exchangeRate > 0 && (
-                                  <div className="text-[10px] text-neutral-700">{formatKRW(order.price * exchangeRate)}</div>
+                                  <div className="text-[10px] text-muted-foreground/70">{formatKRW(order.price * exchangeRate)}</div>
                                 )}
                               </div>
                             ) : (
-                              <span className="text-neutral-700">-</span>
+                              <span className="text-muted-foreground/70">-</span>
                             )}
                           </TableCell>
                           <TableCell>{getStatusBadge(order.status)}</TableCell>
-                          <TableCell className="font-mono text-[11px] text-neutral-500">{formatDateTime(order.createdAt)}</TableCell>
+                          <TableCell className="font-mono text-[11px] text-muted-foreground">{formatDateTime(order.createdAt)}</TableCell>
                           <TableCell className="text-[11px] max-w-[250px] truncate">
                             {isFailed ? (
-                              <span className="text-red-400/80">{order.errorMessage || 'Unknown error'}</span>
+                              <span className="text-red-600 dark:text-red-600 dark:text-red-400/80">{order.errorMessage || 'Unknown error'}</span>
                             ) : order.retryCount > 0 ? (
                               <span className="text-amber-700">Retry x{order.retryCount}</span>
                             ) : order.orderId ? (
-                              <span className="text-neutral-700 font-mono">{order.orderId}</span>
+                              <span className="text-muted-foreground/70 font-mono">{order.orderId}</span>
                             ) : ''}
                           </TableCell>
                         </TableRow>
@@ -334,18 +334,18 @@ export default function OrderLogsPage() {
               </div>
 
               {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t border-amber-900/10">
-                  <span className="text-[11px] text-neutral-600 font-mono">
+                <div className="flex items-center justify-between mt-4 pt-4 border-t border-amber-500/20 dark:border-amber-900/10">
+                  <span className="text-[11px] text-muted-foreground font-mono">
                     {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
                   </span>
                   <div className="flex items-center gap-1">
                     <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                      className="px-3 py-1.5 text-[10px] uppercase tracking-wider rounded bg-neutral-900 text-neutral-400 hover:text-amber-300 disabled:opacity-30 transition-colors">
+                      className="px-3 py-1.5 text-[10px] uppercase tracking-wider rounded bg-muted dark:bg-neutral-900 text-foreground/70 dark:text-neutral-400 hover:text-amber-700 dark:hover:text-amber-300 disabled:opacity-30 transition-colors">
                       Prev
                     </button>
-                    <span className="px-2 text-[11px] text-neutral-600 font-mono">{page}/{totalPages}</span>
+                    <span className="px-2 text-[11px] text-muted-foreground font-mono">{page}/{totalPages}</span>
                     <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                      className="px-3 py-1.5 text-[10px] uppercase tracking-wider rounded bg-neutral-900 text-neutral-400 hover:text-amber-300 disabled:opacity-30 transition-colors">
+                      className="px-3 py-1.5 text-[10px] uppercase tracking-wider rounded bg-muted dark:bg-neutral-900 text-foreground/70 dark:text-neutral-400 hover:text-amber-700 dark:hover:text-amber-300 disabled:opacity-30 transition-colors">
                       Next
                     </button>
                   </div>

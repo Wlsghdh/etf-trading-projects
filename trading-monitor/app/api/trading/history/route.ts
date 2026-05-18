@@ -5,77 +5,100 @@ export const revalidate = 0;
 
 const TRADING_SERVICE_URL = process.env.TRADING_SERVICE_URL || 'http://localhost:8002';
 
+/**
+ * 매매 내역 API - KIS 실제 체결 기록 + 보유종목 손익
+ *
+ * 데이터 소스:
+ * 1. /api/trading/orders → 실제 체결된(SUCCESS) 주문만
+ * 2. /api/trading/balance → 보유종목 현재가/손익
+ */
 export async function GET() {
   try {
-    // purchases(매수 기록, 가격 있음) + orders(주문 로그, 매수/매도 구분)
-    const [histRes, ordersRes] = await Promise.all([
-      fetch(`${TRADING_SERVICE_URL}/api/trading/history?page_size=200`, { signal: AbortSignal.timeout(5000) }),
-      fetch(`${TRADING_SERVICE_URL}/api/trading/orders?page_size=200`, { signal: AbortSignal.timeout(5000) }),
+    const [balRes] = await Promise.all([
+      fetch(`${TRADING_SERVICE_URL}/api/trading/balance`, { signal: AbortSignal.timeout(5000) }),
     ]);
 
-    const byDate: Record<string, { buys: number; sells: number; trades: Array<Record<string, unknown>> }> = {};
+    // 전체 주문을 페이지별로 가져오기 (최대 10페이지)
+    let allOrders: Record<string, unknown>[] = [];
+    for (let page = 1; page <= 10; page++) {
+      try {
+        const res = await fetch(
+          `${TRADING_SERVICE_URL}/api/trading/orders?page=${page}&page_size=50`,
+          { signal: AbortSignal.timeout(5000) }
+        );
+        if (!res.ok) break;
+        const data = await res.json();
+        const orders = data.orders || [];
+        if (orders.length === 0) break;
+        allOrders = allOrders.concat(orders);
+        if (allOrders.length >= (data.total || 0)) break;
+      } catch { break; }
+    }
+    const ordersOk = allOrders.length > 0;
 
-    // 1. purchases에서 매수 기록 (가격 있음)
-    if (histRes.ok) {
-      const histData = await histRes.json();
-      for (const p of histData.purchases || []) {
-        const date = (p.purchase_date || '').split('T')[0];
-        if (!date) continue;
-        if (!byDate[date]) byDate[date] = { buys: 0, sells: 0, trades: [] };
-        byDate[date].buys++;
-        byDate[date].trades.push({
-          id: String(p.id || ''),
-          etfCode: p.etf_code || '',
-          etfName: p.etf_code || '',
-          side: 'BUY',
-          quantity: p.quantity || 0,
-          price: p.price || 0,
-          executedAt: p.created_at || p.purchase_date || '',
-          profitLoss: p.sell_pnl || undefined,
-          profitLossPercent: undefined,
-        });
-
-        // 매도된 것도 추가
-        if (p.sold && p.sold_date) {
-          const soldDate = p.sold_date.split('T')[0];
-          if (!byDate[soldDate]) byDate[soldDate] = { buys: 0, sells: 0, trades: [] };
-          byDate[soldDate].sells++;
-          const pnl = p.sell_pnl || 0;
-          const pnlPct = p.price > 0 && p.quantity > 0 ? (pnl / (p.price * p.quantity)) * 100 : 0;
-          byDate[soldDate].trades.push({
-            id: `sell-${p.id}`,
-            etfCode: p.etf_code || '',
-            etfName: p.etf_code || '',
-            side: 'SELL',
-            quantity: p.quantity || 0,
-            price: p.sold_price || 0,
-            executedAt: p.sold_date || '',
-            profitLoss: pnl,
-            profitLossPercent: Number(pnlPct.toFixed(2)),
-          });
-        }
+    // KIS 보유종목 현재가
+    const kisPrices: Record<string, { currentPrice: number; avgPrice: number; pnlRate: number; quantity: number }> = {};
+    if (balRes.ok) {
+      const balData = await balRes.json();
+      for (const h of balData.holdings || []) {
+        kisPrices[h.code] = {
+          currentPrice: h.current_price,
+          avgPrice: h.avg_price,
+          pnlRate: h.pnl_rate || 0,
+          quantity: h.quantity,
+        };
       }
     }
 
-    // 2. purchases가 비어있으면 orders fallback
-    if (Object.keys(byDate).length === 0 && ordersRes.ok) {
-      const ordersData = await ordersRes.json();
-      for (const o of ordersData.orders || []) {
+    const byDate: Record<string, { buys: number; sells: number; trades: Array<Record<string, unknown>> }> = {};
+
+    // SUCCESS 주문만 사용
+    if (ordersOk) {
+      for (const o of allOrders) {
         if (o.status !== 'SUCCESS') continue;
-        const date = (o.created_at || '').split('T')[0];
+
+        const createdAt = String(o.created_at ?? '');
+        const date = createdAt.split('T')[0];
         if (!date) continue;
         if (!byDate[date]) byDate[date] = { buys: 0, sells: 0, trades: [] };
-        const isBuy = (o.order_type || '').includes('BUY');
+
+        const orderType = String(o.order_type ?? '');
+        const isBuy = orderType.includes('BUY');
         if (isBuy) byDate[date].buys++;
         else byDate[date].sells++;
+
+        const etfCode = String(o.etf_code ?? '');
+        const kisData = kisPrices[etfCode];
+        const quantity = Number(o.quantity || 0);
+        // 체결가 우선, 없으면 지정가, 없으면 KIS 평균매수가
+        const price = Number(o.price ?? 0) || Number(o.limit_price ?? 0) || (kisData?.avgPrice || 0);
+
+        // 미실현 손익: KIS 현재가 vs 매수가
+        let profitLoss = 0;
+        let profitLossPercent = 0;
+        let currentPrice = 0;
+
+        if (isBuy && kisData) {
+          currentPrice = kisData.currentPrice;
+          profitLoss = (currentPrice - (kisData.avgPrice || Number(price))) * Number(quantity);
+          profitLossPercent = kisData.pnlRate;
+        } else if (!isBuy && price > 0) {
+          // 매도: 체결가 기준
+          profitLoss = 0; // 매도 손익은 별도 계산 필요
+        }
+
         byDate[date].trades.push({
-          id: String(o.id || ''),
-          etfCode: o.etf_code || '',
-          etfName: o.etf_code || '',
+          id: String(o.id ?? ''),
+          etfCode,
+          etfName: etfCode,
           side: isBuy ? 'BUY' : 'SELL',
-          quantity: o.quantity || 0,
-          price: o.price || 0,
-          executedAt: o.created_at || '',
+          quantity,
+          price: Number((price).toFixed(2)),
+          currentPrice: currentPrice > 0 ? Number(currentPrice.toFixed(2)) : undefined,
+          executedAt: createdAt,
+          profitLoss: Number(profitLoss.toFixed(2)),
+          profitLossPercent: Number(profitLossPercent.toFixed(2)),
+          orderId: String(o.order_id ?? ''),
         });
       }
     }
@@ -85,12 +108,12 @@ export async function GET() {
         date,
         buyCount: buys,
         sellCount: sells,
-        totalProfitLoss: trades.reduce((sum, t) => sum + ((t.profitLoss as number) || 0), 0),
+        totalProfitLoss: Number(trades.reduce((sum, t) => sum + ((t.profitLoss as number) || 0), 0).toFixed(2)),
         trades,
       }))
       .sort((a, b) => b.date.localeCompare(a.date));
 
-    console.log(`[BFF] trading/history: ${summaries.length}일 매매 기록`);
+    console.log(`[BFF] trading/history: ${summaries.length}일, SUCCESS 주문만 (KIS ${Object.keys(kisPrices).length}종목 손익)`);
     return NextResponse.json(summaries);
   } catch (error) {
     console.log('[BFF] trading/history: 연결 실패 -', error instanceof Error ? error.message : 'unknown');

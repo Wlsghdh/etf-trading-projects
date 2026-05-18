@@ -142,6 +142,41 @@ class BalanceResponse(BaseModel):
     error: Optional[str] = None
 
 
+# 체결기준 현재잔고 (총 자산 + 손익)
+class PresentBalanceHolding(BaseModel):
+    code: str
+    name: str
+    quantity: float
+    avg_price: float
+    current_price: float
+    evaluation: float       # 평가금액
+    purchase_amount: float  # 매수금액
+    profit_loss: float      # 평가손익
+    profit_loss_rate: float # 손익률(%)
+    exchange_code: str
+
+
+class PresentBalanceResponse(BaseModel):
+    success: bool
+    # 전체 요약 (USD 기준)
+    total_purchase_amount: float = 0.0
+    total_evaluation_amount: float = 0.0
+    total_profit_loss: float = 0.0
+    profit_loss_rate: float = 0.0
+    total_deposit: float = 0.0
+    withdrawable_amount: float = 0.0
+    # USD 통화 정보
+    usd_buy_amount: float = 0.0
+    usd_eval_amount: float = 0.0
+    usd_deposit: float = 0.0
+    # KRW 환산 외화 평가 총액
+    foreign_total_krw: float = 0.0
+    exchange_rate: float = 1350.0
+    # 보유 종목별 상세
+    holdings: list[PresentBalanceHolding] = []
+    error: Optional[str] = None
+
+
 # 사이클 리셋
 class ResetResponse(BaseModel):
     success: bool

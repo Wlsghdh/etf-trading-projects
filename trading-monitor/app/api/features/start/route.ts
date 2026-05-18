@@ -4,7 +4,7 @@ const SCRAPER_URL = process.env.SCRAPER_SERVICE_URL || 'http://localhost:8001';
 
 export async function POST() {
   try {
-    const res = await fetch(`${SCRAPER_URL}/api/scraper/features/process`, {
+    const res = await fetch(`${SCRAPER_URL}/features/process`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ include_macro: true, shift_features: true }),

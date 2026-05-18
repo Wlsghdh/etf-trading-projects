@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { HugeiconsIcon } from '@hugeicons/react';
+import { useTheme } from '@/hooks/use-theme';
 import {
   FavouriteIcon,
   Search01Icon,
@@ -12,15 +13,69 @@ import {
   ArrowLeft02Icon,
 } from '@hugeicons/core-free-icons';
 
+// ── Types ── (Favorites)
+
+interface FavoriteItem {
+  symbol: string;
+  addedAt: string;       // ISO date string
+  priceWhenAdded?: number;
+  note?: string;
+}
+
 // ── LocalStorage ──
 
 const FAVORITES_KEY = 'stock_favorites';
+const FAVORITES_V2_KEY = 'stock_favorites_v2';
 
-function loadFavorites(): string[] {
+/** Migrate old string[] format to FavoriteItem[] */
+function migrateFavorites(): FavoriteItem[] {
   if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]'); } catch { return []; }
+  try {
+    const v2 = localStorage.getItem(FAVORITES_V2_KEY);
+    if (v2) return JSON.parse(v2);
+
+    // Migrate from old format
+    const old = localStorage.getItem(FAVORITES_KEY);
+    if (old) {
+      const parsed = JSON.parse(old);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        if (typeof parsed[0] === 'string') {
+          // Old string[] format -> migrate
+          const migrated: FavoriteItem[] = parsed.map((sym: string) => ({
+            symbol: sym,
+            addedAt: new Date().toISOString(),
+          }));
+          localStorage.setItem(FAVORITES_V2_KEY, JSON.stringify(migrated));
+          return migrated;
+        }
+      }
+    }
+    return [];
+  } catch { return []; }
 }
-function saveFavorites(favs: string[]) { localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs)); }
+
+function loadFavoritesV2(): FavoriteItem[] {
+  return migrateFavorites();
+}
+function saveFavoritesV2(favs: FavoriteItem[]) {
+  localStorage.setItem(FAVORITES_V2_KEY, JSON.stringify(favs));
+  // Also keep old key in sync for any code that reads it
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs.map(f => f.symbol)));
+}
+
+/** Fetch current price for a symbol */
+async function fetchCurrentPrice(symbol: string): Promise<number | undefined> {
+  try {
+    const res = await fetch(`/trading/api/data/${symbol}?timeframe=D&limit=1`, { cache: 'no-store' });
+    if (!res.ok) return undefined;
+    const data = await res.json();
+    const items = data.data;
+    if (Array.isArray(items) && items.length > 0) {
+      return items[items.length - 1].close;
+    }
+    return undefined;
+  } catch { return undefined; }
+}
 
 function getUser(): string {
   if (typeof document === 'undefined') return 'User';
@@ -64,6 +119,14 @@ interface NewsItem {
 
 function TVTimeline() {
   const ref = useRef<HTMLDivElement>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const theme = useTheme();
+
+  // 1시간마다 위젯 강제 리로드 (Top Stories와 동기화)
+  useEffect(() => {
+    const iv = setInterval(() => setReloadKey(k => k + 1), 60 * 60 * 1000);
+    return () => clearInterval(iv);
+  }, []);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -80,7 +143,7 @@ function TVTimeline() {
       displayMode: 'regular',
       width: '100%',
       height: '100%',
-      colorTheme: 'dark',
+      colorTheme: theme,
       locale: 'en',
     });
 
@@ -95,13 +158,21 @@ function TVTimeline() {
     ref.current.appendChild(wrapper);
 
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, []);
+  }, [reloadKey, theme]);
 
   return <div ref={ref} className="h-full w-full" />;
 }
 
 function TVHotlists() {
   const ref = useRef<HTMLDivElement>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const theme = useTheme();
+
+  // 1시간마다 위젯 강제 리로드
+  useEffect(() => {
+    const iv = setInterval(() => setReloadKey(k => k + 1), 60 * 60 * 1000);
+    return () => clearInterval(iv);
+  }, []);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -112,7 +183,7 @@ function TVHotlists() {
     script.type = 'text/javascript';
     script.async = true;
     script.innerHTML = JSON.stringify({
-      colorTheme: 'dark',
+      colorTheme: theme,
       dateRange: '1M',
       exchange: 'US',
       showSymbolLogo: true,
@@ -133,13 +204,14 @@ function TVHotlists() {
     ref.current.appendChild(wrapper);
 
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, []);
+  }, [reloadKey, theme]);
 
   return <div ref={ref} className="h-full w-full" />;
 }
 
 function TVChart({ symbol }: { symbol: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
 
   useEffect(() => {
     if (!ref.current) return;
@@ -154,7 +226,7 @@ function TVChart({ symbol }: { symbol: string }) {
       symbol: getTVSymbol(symbol),
       interval: 'D',
       timezone: 'Asia/Seoul',
-      theme: 'dark',
+      theme,
       style: '1',
       locale: 'kr',
       hide_top_toolbar: false,
@@ -179,13 +251,14 @@ function TVChart({ symbol }: { symbol: string }) {
     ref.current.appendChild(wrapper);
 
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, [symbol]);
+  }, [symbol, theme]);
 
   return <div ref={ref} className="h-full w-full" />;
 }
 
 function TVSymbolInfo({ symbol }: { symbol: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
 
   useEffect(() => {
     if (!ref.current) return;
@@ -199,7 +272,7 @@ function TVSymbolInfo({ symbol }: { symbol: string }) {
       symbol: getTVSymbol(symbol),
       width: '100%',
       isTransparent: true,
-      colorTheme: 'dark',
+      colorTheme: theme,
       locale: 'en',
     });
 
@@ -213,9 +286,212 @@ function TVSymbolInfo({ symbol }: { symbol: string }) {
     ref.current.appendChild(wrapper);
 
     return () => { if (ref.current) ref.current.innerHTML = ''; };
-  }, [symbol]);
+  }, [symbol, theme]);
 
   return <div ref={ref} className="w-full" />;
+}
+
+// ── 시장 개요 (Market Overview) ──
+function TVMarketOverview() {
+  const ref = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
+
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.innerHTML = '';
+
+    const script = document.createElement('script');
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-market-overview.js';
+    script.type = 'text/javascript';
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      colorTheme: theme,
+      dateRange: '1D',
+      showChart: true,
+      locale: 'en',
+      largeChartUrl: '',
+      isTransparent: true,
+      showSymbolLogo: true,
+      showFloatingTooltip: false,
+      width: '100%',
+      height: '100%',
+      plotLineColorGrowing: 'rgba(41, 98, 255, 1)',
+      plotLineColorFalling: 'rgba(41, 98, 255, 1)',
+      gridLineColor: 'rgba(240, 243, 250, 0)',
+      scaleFontColor: 'rgba(209, 212, 220, 1)',
+      belowLineFillColorGrowing: 'rgba(41, 98, 255, 0.12)',
+      belowLineFillColorFalling: 'rgba(41, 98, 255, 0.12)',
+      belowLineFillColorGrowingBottom: 'rgba(41, 98, 255, 0)',
+      belowLineFillColorFallingBottom: 'rgba(41, 98, 255, 0)',
+      symbolActiveColor: 'rgba(41, 98, 255, 0.12)',
+      tabs: [
+        {
+          title: 'Indices',
+          symbols: [
+            { s: 'FOREXCOM:SPXUSD', d: 'S&P 500' },
+            { s: 'FOREXCOM:NSXUSD', d: 'Nasdaq 100' },
+            { s: 'FOREXCOM:DJI', d: 'Dow 30' },
+            { s: 'INDEX:NKY', d: 'Nikkei 225' },
+            { s: 'INDEX:DEU40', d: 'DAX' },
+          ],
+          originalTitle: 'Indices',
+        },
+        {
+          title: 'Futures',
+          symbols: [
+            { s: 'CME_MINI:ES1!', d: 'S&P 500' },
+            { s: 'CME:6E1!', d: 'Euro' },
+            { s: 'COMEX:GC1!', d: 'Gold' },
+            { s: 'NYMEX:CL1!', d: 'Crude Oil' },
+            { s: 'NYMEX:NG1!', d: 'Natural Gas' },
+          ],
+          originalTitle: 'Futures',
+        },
+      ],
+    });
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tradingview-widget-container';
+    wrapper.style.height = '100%';
+    const inner = document.createElement('div');
+    inner.className = 'tradingview-widget-container__widget';
+    inner.style.height = '100%';
+    wrapper.appendChild(inner);
+    wrapper.appendChild(script);
+    ref.current.appendChild(wrapper);
+
+    return () => { if (ref.current) ref.current.innerHTML = ''; };
+  }, [theme]);
+
+  return <div ref={ref} className="h-full w-full" />;
+}
+
+// ── 종목 스크리너 ──
+function TVScreener() {
+  const ref = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
+
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.innerHTML = '';
+
+    const script = document.createElement('script');
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-screener.js';
+    script.type = 'text/javascript';
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      width: '100%',
+      height: '100%',
+      defaultColumn: 'overview',
+      defaultScreen: 'most_capitalized',
+      market: 'america',
+      showToolbar: true,
+      colorTheme: theme,
+      locale: 'en',
+      isTransparent: true,
+    });
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tradingview-widget-container';
+    wrapper.style.height = '100%';
+    const inner = document.createElement('div');
+    inner.className = 'tradingview-widget-container__widget';
+    inner.style.height = '100%';
+    wrapper.appendChild(inner);
+    wrapper.appendChild(script);
+    ref.current.appendChild(wrapper);
+
+    return () => { if (ref.current) ref.current.innerHTML = ''; };
+  }, [theme]);
+
+  return <div ref={ref} className="h-full w-full" />;
+}
+
+// ── 티커 띠 (Ticker Tape) ──
+function TVTickerTape() {
+  const ref = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
+
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.innerHTML = '';
+
+    const script = document.createElement('script');
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js';
+    script.type = 'text/javascript';
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      symbols: [
+        { proName: 'FOREXCOM:SPXUSD', title: 'S&P 500' },
+        { proName: 'FOREXCOM:NSXUSD', title: 'Nasdaq 100' },
+        { proName: 'FX_IDC:EURUSD', title: 'EUR/USD' },
+        { proName: 'BITSTAMP:BTCUSD', title: 'BTC/USD' },
+        { proName: 'NASDAQ:AAPL', title: 'Apple' },
+        { proName: 'NASDAQ:NVDA', title: 'NVIDIA' },
+        { proName: 'NASDAQ:TSLA', title: 'Tesla' },
+        { proName: 'NASDAQ:MSFT', title: 'Microsoft' },
+        { proName: 'NASDAQ:GOOGL', title: 'Google' },
+        { proName: 'AMEX:SPY', title: 'S&P 500 ETF' },
+        { proName: 'NASDAQ:QQQ', title: 'Nasdaq ETF' },
+      ],
+      showSymbolLogo: true,
+      isTransparent: true,
+      displayMode: 'adaptive',
+      colorTheme: theme,
+      locale: 'en',
+    });
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tradingview-widget-container';
+    const inner = document.createElement('div');
+    inner.className = 'tradingview-widget-container__widget';
+    wrapper.appendChild(inner);
+    wrapper.appendChild(script);
+    ref.current.appendChild(wrapper);
+
+    return () => { if (ref.current) ref.current.innerHTML = ''; };
+  }, [theme]);
+
+  return <div ref={ref} className="w-full" />;
+}
+
+// ── 경제 캘린더 (Events) ──
+function TVEvents() {
+  const ref = useRef<HTMLDivElement>(null);
+  const theme = useTheme();
+
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.innerHTML = '';
+
+    const script = document.createElement('script');
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-events.js';
+    script.type = 'text/javascript';
+    script.async = true;
+    script.innerHTML = JSON.stringify({
+      colorTheme: theme,
+      isTransparent: true,
+      width: '100%',
+      height: '100%',
+      locale: 'en',
+      importanceFilter: '-1,0,1',
+      countryFilter: 'us,kr,jp,cn,eu',
+    });
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tradingview-widget-container';
+    wrapper.style.height = '100%';
+    const inner = document.createElement('div');
+    inner.className = 'tradingview-widget-container__widget';
+    inner.style.height = '100%';
+    wrapper.appendChild(inner);
+    wrapper.appendChild(script);
+    ref.current.appendChild(wrapper);
+
+    return () => { if (ref.current) ref.current.innerHTML = ''; };
+  }, [theme]);
+
+  return <div ref={ref} className="h-full w-full" />;
 }
 
 // ── 뉴스 카드 (Good/Bad 투표) ──
@@ -400,7 +676,14 @@ function NewsPanel({ symbol, user }: { symbol?: string; user: string }) {
     return (
       <div className="space-y-3">
         {[...Array(5)].map((_, i) => (
-          <div key={i} className="h-20 animate-pulse rounded-lg bg-muted" />
+          <div key={i} className="relative h-20 overflow-hidden rounded-lg border border-border/40 bg-muted/20">
+            <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/5 to-transparent" />
+            <div className="space-y-2 p-3">
+              <div className="h-2.5 w-3/4 rounded bg-muted-foreground/20" />
+              <div className="h-2 w-full rounded bg-muted-foreground/15" />
+              <div className="h-2 w-1/2 rounded bg-muted-foreground/15" />
+            </div>
+          </div>
         ))}
       </div>
     );
@@ -423,26 +706,90 @@ function NewsPanel({ symbol, user }: { symbol?: string; user: string }) {
   );
 }
 
+type SideTab = 'news' | 'overview' | 'screener' | 'events';
+
 // ── 메인 ──
 export default function StocksPage() {
-  const [favorites, setFavorites] = useState<string[]>([]);
+  const [favoritesV2, setFavoritesV2] = useState<FavoriteItem[]>([]);
+  const [currentPrices, setCurrentPrices] = useState<Record<string, number>>({});
+  const [noteInput, setNoteInput] = useState<Record<string, string>>({});
+  const [editingNote, setEditingNote] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [activeSymbol, setActiveSymbol] = useState<string | null>(null);
   const [showFavorites, setShowFavorites] = useState(false);
   const [user, setUser] = useState('User');
+  const [sideTab, setSideTab] = useState<SideTab>('news');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Derived: simple symbol list for backward compat checks
+  const favorites = favoritesV2.map(f => f.symbol);
+
   useEffect(() => {
-    setFavorites(loadFavorites());
+    setFavoritesV2(loadFavoritesV2());
     setUser(getUser());
   }, []);
 
-  const toggleFav = useCallback((sym: string) => {
-    setFavorites(prev => {
-      const next = prev.includes(sym) ? prev.filter(s => s !== sym) : [...prev, sym];
-      saveFavorites(next);
+  // Fetch current prices for all favorites
+  useEffect(() => {
+    if (favoritesV2.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const prices: Record<string, number> = {};
+      await Promise.all(
+        favoritesV2.map(async (fav) => {
+          const price = await fetchCurrentPrice(fav.symbol);
+          if (price !== undefined) prices[fav.symbol] = price;
+        })
+      );
+      if (!cancelled) setCurrentPrices(prices);
+    })();
+    return () => { cancelled = true; };
+  }, [favoritesV2]);
+
+  const toggleFav = useCallback(async (sym: string) => {
+    setFavoritesV2(prev => {
+      const exists = prev.find(f => f.symbol === sym);
+      if (exists) {
+        const next = prev.filter(f => f.symbol !== sym);
+        saveFavoritesV2(next);
+        return next;
+      }
+      // Will be updated with price async below
+      const newItem: FavoriteItem = {
+        symbol: sym,
+        addedAt: new Date().toISOString(),
+      };
+      const next = [...prev, newItem];
+      saveFavoritesV2(next);
+
+      // Fetch price async and update
+      fetchCurrentPrice(sym).then(price => {
+        if (price !== undefined) {
+          setFavoritesV2(current => {
+            const updated = current.map(f =>
+              f.symbol === sym && !f.priceWhenAdded
+                ? { ...f, priceWhenAdded: price }
+                : f
+            );
+            saveFavoritesV2(updated);
+            return updated;
+          });
+        }
+      });
+
       return next;
     });
+  }, []);
+
+  const updateFavNote = useCallback((sym: string, note: string) => {
+    setFavoritesV2(prev => {
+      const updated = prev.map(f =>
+        f.symbol === sym ? { ...f, note: note.trim() || undefined } : f
+      );
+      saveFavoritesV2(updated);
+      return updated;
+    });
+    setEditingNote(null);
   }, []);
 
   const handleSearch = () => {
@@ -514,7 +861,12 @@ export default function StocksPage() {
 
   // ── 메인 (검색 + 뉴스) ──
   return (
-    <div className="flex h-[calc(100vh-7rem)] flex-col gap-4">
+    <div className="flex h-[calc(100vh-7rem)] flex-col gap-3">
+      {/* 티커 띠 (스크롤되는 시장 가격) */}
+      <div className="shrink-0 rounded-lg overflow-hidden border border-border">
+        <TVTickerTape />
+      </div>
+
       {/* 검색 바 */}
       <div className="flex items-center gap-3">
         <h1 className="text-lg font-semibold">종목 열람</h1>
@@ -544,7 +896,7 @@ export default function StocksPage() {
           className={showFavorites ? 'bg-red-500 hover:bg-red-600 text-white' : ''}
         >
           <HugeiconsIcon icon={FavouriteIcon} className="mr-1 h-3.5 w-3.5" strokeWidth={showFavorites ? 3 : 2} />
-          관심종목 ({favorites.length})
+          관심종목 ({favoritesV2.length})
         </Button>
       </div>
 
@@ -558,29 +910,96 @@ export default function StocksPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {favorites.length === 0 ? (
+            {favoritesV2.length === 0 ? (
               <p className="py-4 text-center text-sm text-muted-foreground">
                 종목 검색 후 하트를 눌러 관심종목을 추가하세요
               </p>
             ) : (
-              <div className="flex flex-wrap gap-2">
-                {favorites.map(sym => (
-                  <Button
-                    key={sym}
-                    variant="outline"
-                    size="sm"
-                    onClick={() => { setActiveSymbol(sym); setShowFavorites(false); }}
-                    className="gap-1.5"
-                  >
-                    <span className="font-mono font-bold">{sym}</span>
-                    <button
-                      onClick={e => { e.stopPropagation(); toggleFav(sym); }}
-                      className="text-red-500 hover:text-red-700"
+              <div className="space-y-2">
+                {favoritesV2.map(fav => {
+                  const cur = currentPrices[fav.symbol];
+                  const added = fav.priceWhenAdded;
+                  const change = added && cur ? ((cur - added) / added) * 100 : undefined;
+
+                  return (
+                    <div
+                      key={fav.symbol}
+                      className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 hover:bg-muted/40 transition-colors cursor-pointer"
+                      onClick={() => { setActiveSymbol(fav.symbol); setShowFavorites(false); }}
                     >
-                      <HugeiconsIcon icon={Cancel01Icon} className="h-3 w-3" strokeWidth={2} />
-                    </button>
-                  </Button>
-                ))}
+                      {/* Symbol */}
+                      <span className="font-mono font-bold text-sm min-w-[56px]">{fav.symbol}</span>
+
+                      {/* Price info */}
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        {added !== undefined && (
+                          <span title="관심종목 추가 시 가격">
+                            추가가 <span className="font-mono text-foreground">${added.toFixed(2)}</span>
+                          </span>
+                        )}
+                        {cur !== undefined && (
+                          <span title="현재 가격">
+                            현재 <span className="font-mono text-foreground">${cur.toFixed(2)}</span>
+                          </span>
+                        )}
+                        {change !== undefined && (
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] font-mono ${
+                              change > 0 ? 'text-green-500 border-green-500/40' :
+                              change < 0 ? 'text-red-500 border-red-500/40' :
+                              'text-muted-foreground'
+                            }`}
+                          >
+                            {change > 0 ? '+' : ''}{change.toFixed(2)}%
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Added date */}
+                      <span className="ml-auto text-[10px] text-muted-foreground shrink-0" title={new Date(fav.addedAt).toLocaleString('ko-KR')}>
+                        {new Date(fav.addedAt).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })} 추가
+                      </span>
+
+                      {/* Note */}
+                      {editingNote === fav.symbol ? (
+                        <input
+                          autoFocus
+                          className="w-32 rounded border border-border bg-background px-1.5 py-0.5 text-xs outline-none focus:ring-1 focus:ring-primary/50"
+                          placeholder="메모 입력..."
+                          value={noteInput[fav.symbol] ?? fav.note ?? ''}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => setNoteInput(prev => ({ ...prev, [fav.symbol]: e.target.value }))}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') updateFavNote(fav.symbol, noteInput[fav.symbol] ?? fav.note ?? '');
+                            if (e.key === 'Escape') setEditingNote(null);
+                          }}
+                          onBlur={() => updateFavNote(fav.symbol, noteInput[fav.symbol] ?? fav.note ?? '')}
+                        />
+                      ) : (
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            setEditingNote(fav.symbol);
+                            setNoteInput(prev => ({ ...prev, [fav.symbol]: fav.note ?? '' }));
+                          }}
+                          className="text-[10px] text-muted-foreground hover:text-foreground truncate max-w-[120px]"
+                          title={fav.note || '메모 추가'}
+                        >
+                          {fav.note || '+ 메모'}
+                        </button>
+                      )}
+
+                      {/* Remove button */}
+                      <button
+                        onClick={e => { e.stopPropagation(); toggleFav(fav.symbol); }}
+                        className="text-red-500 hover:text-red-700 shrink-0"
+                      >
+                        <HugeiconsIcon icon={Cancel01Icon} className="h-3 w-3" strokeWidth={2} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>
@@ -607,21 +1026,43 @@ export default function StocksPage() {
 
         {/* TradingView 뉴스 타임라인 */}
         <Card size="sm" className="flex-1 min-h-0 hidden lg:flex lg:flex-col">
-          <CardHeader className="border-b">
-            <CardTitle className="text-sm">실시간 마켓 뉴스</CardTitle>
+          <CardHeader className="border-b py-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              실시간 마켓 뉴스
+              <Badge variant="outline" className="text-[10px]">1h 갱신</Badge>
+            </CardTitle>
           </CardHeader>
           <CardContent className="h-[calc(100%-3rem)] p-0">
             <TVTimeline />
           </CardContent>
         </Card>
 
-        {/* 인기 종목 */}
-        <Card size="sm" className="w-72 shrink-0 min-h-0 hidden xl:flex xl:flex-col">
-          <CardHeader className="border-b">
-            <CardTitle className="text-sm">인기 종목</CardTitle>
+        {/* 우측 - 탭 전환 (인기종목/시장개요/스크리너/캘린더) */}
+        <Card size="sm" className="w-80 shrink-0 min-h-0 hidden xl:flex xl:flex-col">
+          <CardHeader className="border-b py-2 px-3">
+            <div className="flex items-center gap-1">
+              {[
+                { id: 'news' as SideTab, label: '인기' },
+                { id: 'overview' as SideTab, label: '시장' },
+                { id: 'screener' as SideTab, label: '스크리너' },
+                { id: 'events' as SideTab, label: '캘린더' },
+              ].map(tab => (
+                <button key={tab.id} onClick={() => setSideTab(tab.id)}
+                  className={`px-2 py-1 text-[11px] rounded transition-colors ${
+                    sideTab === tab.id
+                      ? 'bg-primary text-primary-foreground font-medium'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </CardHeader>
           <CardContent className="h-[calc(100%-3rem)] p-0">
-            <TVHotlists />
+            {sideTab === 'news' && <TVHotlists />}
+            {sideTab === 'overview' && <TVMarketOverview />}
+            {sideTab === 'screener' && <TVScreener />}
+            {sideTab === 'events' && <TVEvents />}
           </CardContent>
         </Card>
       </div>

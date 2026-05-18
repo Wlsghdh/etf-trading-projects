@@ -134,7 +134,7 @@ class ProcessedDatabaseService:
             "`processed_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP "
             "ON UPDATE CURRENT_TIMESTAMP"
         )
-        col_defs.append("PRIMARY KEY (`time`)")
+        col_defs.append("PRIMARY KEY (`symbol`, `timeframe`, `time`)")
 
         ddl = (
             f"CREATE TABLE `{table_name}` (\n"
@@ -223,8 +223,9 @@ class ProcessedDatabaseService:
         # Build INSERT ... ON DUPLICATE KEY UPDATE
         col_list = ", ".join(f"`{c}`" for c in write_cols)
         param_list = ", ".join(f":{c}" for c in write_cols)
+        pk_cols = {"time", "symbol", "timeframe"}
         update_list = ", ".join(
-            f"`{c}` = VALUES(`{c}`)" for c in write_cols if c != "time"
+            f"`{c}` = VALUES(`{c}`)" for c in write_cols if c not in pk_cols
         )
 
         insert_sql = text(

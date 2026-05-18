@@ -15,10 +15,12 @@ interface ScrapingStatsProps {
 export function ScrapingStats({ status, errorCount, warningCount, infoCount, totalLogs }: ScrapingStatsProps) {
   const isRunning = status?.status === 'running';
   const isError = status?.status === 'error';
-  const isCompleted = status?.status === 'completed';
+  const isCompleted = status?.status === 'completed' || status?.status === 'partial';
   const progress = status?.progress ?? 0;
   const completed = status?.completedSymbols ?? 0;
-  const total = status?.totalSymbols ?? 101;
+  // 우선순위: 실행 중 진행 total → yaml 기반 configuredTotal → '-'
+  const total = status?.totalSymbols ?? status?.configuredTotal;
+  const totalDisplay = total ?? '-';
   const errorSymbols = status?.errorSymbols?.length ?? 0;
 
   return (
@@ -34,7 +36,7 @@ export function ScrapingStats({ status, errorCount, warningCount, infoCount, tot
               'bg-muted-foreground'
             }`} />
             <span className="text-lg font-bold">
-              {isRunning ? '수집 중' : isError ? '에러' : isCompleted ? '완료' : '대기'}
+              {isRunning ? '수집 중' : isError ? '에러' : status?.status === 'partial' ? '부분완료' : isCompleted ? '완료' : '대기'}
             </span>
           </div>
           {status?.currentSymbol && isRunning && (
@@ -49,7 +51,7 @@ export function ScrapingStats({ status, errorCount, warningCount, infoCount, tot
         <CardContent className="pt-6">
           <p className="text-sm text-muted-foreground">진행률</p>
           <p className="text-2xl font-bold mt-1">
-            {completed}<span className="text-base text-muted-foreground">/{total}</span>
+            {completed}<span className="text-base text-muted-foreground">/{totalDisplay}</span>
           </p>
           <div className="h-1.5 w-full rounded-full bg-muted mt-2 overflow-hidden">
             <div

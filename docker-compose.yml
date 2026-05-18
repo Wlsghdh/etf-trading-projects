@@ -54,6 +54,7 @@ services:
     environment:
       - TZ=Asia/Seoul
       - DB_URL=mysql+pymysql://ahnbi2:bigdata@172.17.0.1:3306/etf2_db
+      - MARKET_DB_URL=mysql+pymysql://ahnbi2:bigdata@172.17.0.1:3306/etf2_market_data
       - FRED_API_KEY=9caba366c8bc71e8fea23b45a34651a5
       - LOG_DIR=/app/logs
       - DOWNLOAD_DIR=/app/downloads
@@ -63,8 +64,9 @@ services:
     volumes:
       - ./scraper-service/logs:/app/logs
       - ./scraper-service/downloads:/app/downloads
-      - ./scraper-service/cookies.json:/app/cookies.json:ro
-      - ./scraper-service/.env:/app/.env:ro
+      - ./scraper-service/cookies:/app/cookies
+      - ./.env:/app/.env:ro
+      - ./scraper-service/config:/app/config:ro
       - /usr/share/zoneinfo/Asia/Seoul:/etc/localtime:ro
     extra_hosts:
       - "host.docker.internal:172.17.0.1"

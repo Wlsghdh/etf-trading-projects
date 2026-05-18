@@ -161,7 +161,7 @@ export function StatsCards({ status }: StatsCardsProps) {
             <div className="flex items-center gap-1">
               <button
                 onClick={() => { setCalcMode(m => m === 'usd_to_krw' ? 'krw_to_usd' : 'usd_to_krw'); setCalcInput(''); }}
-                className="shrink-0 rounded px-1.5 py-0.5 text-xs font-mono bg-zinc-800 hover:bg-zinc-700 transition-colors"
+                className="shrink-0 rounded px-1.5 py-0.5 text-xs font-mono bg-muted text-foreground hover:bg-accent transition-colors"
               >
                 {calcMode === 'usd_to_krw' ? 'USD→KRW' : 'KRW→USD'}
               </button>
@@ -170,7 +170,7 @@ export function StatsCards({ status }: StatsCardsProps) {
                 value={calcInput}
                 onChange={e => setCalcInput(e.target.value)}
                 placeholder={calcMode === 'usd_to_krw' ? 'USD' : 'KRW'}
-                className="w-full rounded bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs font-mono tabular-nums text-right focus:outline-none focus:border-zinc-500"
+                className="w-full rounded bg-background border border-border px-2 py-1 text-xs font-mono tabular-nums text-right text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
               />
             </div>
             <div className="text-right text-sm font-semibold tabular-nums">
@@ -188,7 +188,7 @@ export function StatsCards({ status }: StatsCardsProps) {
               <button
                 onClick={handleReset}
                 disabled={resetLoading}
-                className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors disabled:opacity-50"
+                className="rounded border border-border bg-background px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50"
               >
                 {resetLoading ? '...' : '리셋'}
               </button>
@@ -198,7 +198,7 @@ export function StatsCards({ status }: StatsCardsProps) {
       </div>
 
       {resetMessage && (
-        <div className="rounded-md bg-zinc-800 border border-zinc-700 px-4 py-2 text-sm text-zinc-300">
+        <div className="rounded-md bg-muted border border-border px-4 py-2 text-sm text-foreground">
           {resetMessage}
         </div>
       )}

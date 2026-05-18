@@ -42,7 +42,7 @@ EXCHANGE_CODE_MAP = {
 
 # 주요 ETF의 거래소 매핑 (필요시 확장)
 TICKER_EXCHANGE_MAP = {
-    "QQQ": "NASD", "TQQQ": "NASD", "SQQQ": "NASD",
+    "QQQ": "NASD", "QQQM": "NASD", "TQQQ": "NASD", "SQQQ": "NASD",
     "SPY": "AMEX", "VOO": "AMEX", "IVV": "AMEX",
     "DIA": "AMEX", "IWM": "AMEX", "VTI": "AMEX",
     "XLF": "AMEX", "XLK": "AMEX", "XLE": "AMEX",
@@ -76,6 +76,24 @@ class BalanceInfo:
     holdings: list = field(default_factory=list)
 
 
+@dataclass
+class PresentBalanceInfo:
+    """체결기준 현재잔고 (inquire-present-balance API 응답)"""
+    total_purchase_amount: float = 0.0    # pchs_amt_smtl - 총 매수금액 (USD)
+    total_evaluation_amount: float = 0.0  # evlu_amt_smtl - 총 평가금액 (USD)
+    total_profit_loss: float = 0.0        # evlu_pfls_amt_smtl - 평가손익 (USD)
+    profit_loss_rate: float = 0.0         # evlu_erng_rt1 - 수익률 (%)
+    total_deposit: float = 0.0            # tot_dncl_amt - 총 예수금
+    withdrawable_amount: float = 0.0      # wdrw_psbl_tot_amt - 출금가능금액
+    foreign_total_krw: float = 0.0        # frcr_evlu_tota - 외화 평가 총액 (KRW)
+    usd_buy_amount: float = 0.0           # USD 매수 합계
+    usd_eval_amount: float = 0.0          # USD 평가 합계
+    usd_deposit: float = 0.0              # USD 예수금
+    holdings: list = field(default_factory=list)  # 보유 종목 (output1)
+    success: bool = False
+    error: Optional[str] = None
+
+
 class KISClient:
     """한국투자증권 해외주식 API 래퍼 (미국 ETF 전용)"""
 
@@ -86,6 +104,10 @@ class KISClient:
         self._mode = settings.trading_mode
         self._base_url = BASE_URLS.get(self._mode, BASE_URLS["paper"])
         self._tr_ids = TR_IDS.get(self._mode, TR_IDS["paper"])
+        # 잔고 캐시 (KIS API 간헐 500 에러 대응)
+        self._balance_cache: Optional["BalanceInfo"] = None
+        self._balance_cache_at: float = 0.0
+        self._balance_cache_ttl: float = 30.0  # 30초 캐시
 
         if self._mode == "live" and not settings.kis_live_confirmation:
             raise ValueError(
@@ -135,8 +157,40 @@ class KISClient:
         """토큰 확인 및 자동 갱신"""
         await self.get_access_token()
 
-    async def get_balance(self) -> BalanceInfo:
-        """해외주식 잔고 조회 (보유종목 + 매수가능금액)"""
+    async def get_balance(self, max_retries: int = 2) -> BalanceInfo:
+        """해외주식 잔고 조회 (보유종목 + 매수가능금액).
+
+        간헐적 500 에러 대응:
+        - 30초 캐시 사용
+        - 실패 시 재시도 후에도 실패하면 최근 캐시 반환
+        """
+        # 캐시 확인
+        now = time.time()
+        if self._balance_cache and (now - self._balance_cache_at) < self._balance_cache_ttl:
+            return self._balance_cache
+
+        for attempt in range(max_retries + 1):
+            try:
+                result = await self._fetch_balance_internal()
+                # 성공 시 캐시 갱신 (cash > 0이거나 holdings가 있을 때만)
+                if result.available_cash > 0 or len(result.holdings) > 0:
+                    self._balance_cache = result
+                    self._balance_cache_at = time.time()
+                return result
+            except Exception as e:
+                if attempt < max_retries:
+                    logger.warning(f"잔고 조회 재시도 ({attempt + 1}/{max_retries + 1}): {e}")
+                    await asyncio.sleep(0.5 * (attempt + 1))
+                else:
+                    logger.error(f"잔고 조회 최종 실패: {e}")
+                    # 캐시가 있으면 캐시 반환 (오래된 데이터라도)
+                    if self._balance_cache:
+                        logger.info(f"캐시된 잔고 사용 (age: {(now - self._balance_cache_at):.0f}s)")
+                        return self._balance_cache
+                    return BalanceInfo()
+
+    async def _fetch_balance_internal(self) -> "BalanceInfo":
+        """실제 KIS API 호출 (재시도 없는 단일 호출)"""
         await self._ensure_token()
         await self._rate_limit()
 
@@ -231,6 +285,109 @@ class KISClient:
                 self._access_token = None
                 self._token_expires_at = 0.0
             return BalanceInfo()
+
+    async def get_present_balance(self) -> "PresentBalanceInfo":
+        """체결기준 현재잔고 조회 (총자산 + 평가손익 포함).
+
+        KIS API: inquire-present-balance
+        - paper: VTRP6504R
+        - real:  CTRP6504R
+
+        output1: 보유 종목별 상세
+        output2: 통화별 매수/평가/예수금
+        output3: 전체 자산/손익 요약
+        """
+        try:
+            await self._ensure_token()
+            await self._rate_limit()
+        except Exception as e:
+            return PresentBalanceInfo(success=False, error=f"토큰 발급 실패: {e}")
+
+        account_parts = settings.kis_account_number.split("-")
+        if len(account_parts) != 2:
+            return PresentBalanceInfo(success=False, error="잘못된 계좌번호 형식")
+
+        tr_id = "VTRP6504R" if self._mode == "paper" else "CTRP6504R"
+        url = f"{self._base_url}/uapi/overseas-stock/v1/trading/inquire-present-balance"
+        params = {
+            "CANO": account_parts[0],
+            "ACNT_PRDT_CD": account_parts[1],
+            "WCRC_FRCR_DVSN_CD": "02",  # 02: 외화
+            "NATN_CD": "840",            # 840: 미국
+            "TR_MKET_CD": "00",          # 00: 전체
+            "INQR_DVSN_CD": "00",        # 00: 전체
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(url, headers=self._get_headers(tr_id), params=params)
+                resp.raise_for_status()
+                data = resp.json()
+
+            if data.get("rt_cd") != "0":
+                return PresentBalanceInfo(success=False, error=data.get("msg1", "응답 오류"))
+
+            # output3: 전체 자산/손익 요약
+            output3 = data.get("output3", {}) or {}
+
+            def f(v):
+                try:
+                    return float(v)
+                except (ValueError, TypeError):
+                    return 0.0
+
+            # output2: 통화별 (USD만 추출)
+            output2 = data.get("output2", []) or []
+            usd_buy = 0.0
+            usd_eval = 0.0
+            usd_deposit = 0.0
+            for item in output2:
+                if item.get("crcy_cd") == "USD":
+                    usd_buy = f(item.get("frcr_buy_amt_smtl"))
+                    usd_eval = f(item.get("frcr_evlu_amt2"))
+                    usd_deposit = f(item.get("frcr_dncl_amt_2"))
+                    break
+
+            # output1: 보유 종목 (해외주식)
+            output1 = data.get("output1", []) or []
+            holdings = []
+            for item in output1:
+                qty = f(item.get("ovrs_cblc_qty") or item.get("ord_psbl_qty", 0))
+                if qty > 0:
+                    holdings.append({
+                        "code": item.get("pdno", "") or item.get("ovrs_pdno", ""),
+                        "name": item.get("prdt_name", "") or item.get("ovrs_item_name", ""),
+                        "quantity": qty,
+                        "avg_price": f(item.get("avg_unpr3") or item.get("pchs_avg_pric", 0)),
+                        "current_price": f(item.get("ovrs_now_pric1") or item.get("now_pric2", 0)),
+                        "evaluation": f(item.get("frcr_evlu_amt2", 0)),
+                        "purchase_amount": f(item.get("frcr_pchs_amt", 0)),
+                        "profit_loss": f(item.get("evlu_pfls_amt2", 0)),
+                        "profit_loss_rate": f(item.get("evlu_pfls_rt1") or item.get("evlu_pfls_rt", 0)),
+                        "exchange_code": item.get("ovrs_excg_cd", ""),
+                    })
+
+            return PresentBalanceInfo(
+                total_purchase_amount=f(output3.get("pchs_amt_smtl")),
+                total_evaluation_amount=f(output3.get("evlu_amt_smtl")),
+                total_profit_loss=f(output3.get("evlu_pfls_amt_smtl")),
+                profit_loss_rate=f(output3.get("evlu_erng_rt1")),
+                total_deposit=f(output3.get("tot_dncl_amt")),
+                withdrawable_amount=f(output3.get("wdrw_psbl_tot_amt")),
+                foreign_total_krw=f(output3.get("frcr_evlu_tota")),
+                usd_buy_amount=usd_buy,
+                usd_eval_amount=usd_eval,
+                usd_deposit=usd_deposit,
+                holdings=holdings,
+                success=True,
+            )
+
+        except httpx.HTTPError as e:
+            logger.error(f"체결기준현재잔고 조회 실패: {e}")
+            return PresentBalanceInfo(success=False, error=f"HTTP 오류: {str(e)}")
+        except Exception as e:
+            logger.error(f"체결기준현재잔고 조회 예외: {e}")
+            return PresentBalanceInfo(success=False, error=str(e))
 
     async def buy_order(
         self, code: str, qty: float, price: Optional[float] = None
