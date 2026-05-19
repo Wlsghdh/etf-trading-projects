@@ -650,16 +650,25 @@ class TradingViewScraper:
                 logger.info(f"심볼 검증 성공 (타이틀): {page_title}")
                 return True
 
-            logger.warning(
-                f"심볼 불일치 가능: 차트={chart_symbol}, 타이틀={page_title}, "
-                f"기대={expected_symbol}. 계속 진행합니다."
+            logger.error(
+                f"심볼 검증 실패: 차트={chart_symbol}, 타이틀={page_title}, "
+                f"기대={expected_symbol}. 다운로드 차단 (오염 방지)."
             )
-            # 차트 심볼을 알 수 없는 경우에만 경고 후 진행
-            return True
+            _db_log(
+                "ERROR",
+                "심볼 검증 실패 - 차트/타이틀에서 확인 불가, 다운로드 차단",
+                symbol=expected_symbol,
+            )
+            return False
 
         except Exception as e:
-            logger.warning(f"심볼 검증 중 오류 (무시하고 진행): {e}")
-            return True
+            logger.error(f"심볼 검증 중 오류 - 다운로드 차단 (오염 방지): {e}")
+            _db_log(
+                "ERROR",
+                f"심볼 검증 오류 - 차단: {e}",
+                symbol=expected_symbol,
+            )
+            return False
 
     async def capture_screenshot(self, name: str):
         """실패 시 디버깅용 스크린샷 캡처"""
