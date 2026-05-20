@@ -804,9 +804,6 @@ class TradingViewScraper:
             await self.page.keyboard.press("Escape")
             await asyncio.sleep(0.5)
 
-            # === 디버그: 메뉴 클릭 전 스크린샷 ===
-            await self.capture_screenshot("debug_before_menu")
-
             # 레이아웃 관리 메뉴 클릭 → "차트 데이터 다운로드..." 선택
             menu_opened = False
             # 방법 1: role 매칭 (Playwright MCP로 확인된 정확한 셀렉터)
@@ -829,9 +826,6 @@ class TradingViewScraper:
                 return None
 
             await asyncio.sleep(0.5)
-
-            # === 디버그: 메뉴 열린 후 스크린샷 ===
-            await self.capture_screenshot("debug_menu_opened")
 
             # "차트 데이터 다운로드" 메뉴 항목 클릭
             download_menu_clicked = False
@@ -885,6 +879,7 @@ class TradingViewScraper:
                 await download_btn.wait_for(state="visible", timeout=10000)
             except Exception:
                 logger.warning("다운로드 버튼을 찾을 수 없음 - 데이터 없는 심볼일 수 있음")
+                await self.capture_screenshot("download_no_btn")
                 await self.page.keyboard.press("Escape")
                 await asyncio.sleep(0.5)
                 return None
@@ -900,6 +895,7 @@ class TradingViewScraper:
                         await asyncio.sleep(3)
                     else:
                         logger.warning("다운로드 버튼이 로딩 상태에서 벗어나지 않음 - 데이터 없는 심볼")
+                        await self.capture_screenshot("download_btn_loading")
                         await self.page.keyboard.press("Escape")
                         await asyncio.sleep(0.5)
                         return None
