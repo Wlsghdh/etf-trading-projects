@@ -216,6 +216,63 @@ async function fetchFeatureStatus(): Promise<CollectorStatus> {
   return base;
 }
 
+async function fetchEdgarStatus(): Promise<CollectorStatus> {
+  const base: CollectorStatus = {
+    id: 'sec-edgar',
+    name: 'SEC Edgar (전자공시)',
+    source: 'SEC EDGAR API (edgartools)',
+    description: '10-K, 10-Q 미국 공시 데이터',
+    status: 'unknown',
+    lastRun: null,
+    lastSuccess: null,
+    totalItems: null,
+    successCount: null,
+    errorCount: null,
+    successRate: null,
+    currentItem: null,
+    duration: null,
+    recentJobs: [],
+  };
+
+  try {
+    const [statusRes, logsRes] = await Promise.all([
+      fetch(`${SCRAPER_URL}/edgar/status`, { signal: AbortSignal.timeout(5000) }),
+      fetch(`${SCRAPER_URL}/edgar/logs?limit=5`, { signal: AbortSignal.timeout(5000) }),
+    ]);
+
+    if (statusRes.ok) {
+      const data = await statusRes.json();
+      base.status = data.status || 'idle';
+      base.currentItem = data.current_symbol || null;
+      base.totalItems = data.total || null;
+      base.successCount = data.progress ? data.progress - (data.errors?.length || 0) : null;
+      base.errorCount = data.errors?.length || 0;
+      if (data.total && data.total > 0 && base.successCount !== null) {
+        base.successRate = Math.round((base.successCount / data.total) * 100);
+      }
+    }
+
+    if (logsRes.ok) {
+      const logsData = await logsRes.json();
+      base.recentJobs = (logsData.logs || []).map((l: Record<string, unknown>) => ({
+        jobId: l.job_id as string,
+        startTime: l.started_at as string,
+        endTime: l.finished_at as string | null,
+        status: l.status as string,
+        logCount: (l.success_count as number) + (l.fail_count as number) || 0,
+        errorCount: (l.fail_count as number) || 0,
+      }));
+      if (logsData.logs?.length > 0) {
+        base.lastRun = logsData.logs[0].started_at;
+      }
+    }
+  } catch {
+    base.status = 'idle';
+  }
+
+  return base;
+}
+
 function createPlannedCollector(
   id: string,
   name: string,
@@ -248,13 +305,8 @@ export async function GET() {
       fetchFeatureStatus(),
     ]);
 
-    // B. SEC Edgar (해외 전자공시) - 구현 중 (스크립트 존재, API 미연동)
-    const secEdgar = createPlannedCollector(
-      'sec-edgar',
-      'SEC Edgar (전자공시)',
-      'SEC EDGAR API (edgartools)',
-      '10-K, 10-Q, 8-K 등 미국 공시 데이터 (구현 중)'
-    );
+    // B. SEC Edgar (해외 전자공시) - 실서비스 연동
+    const secEdgar = await fetchEdgarStatus();
 
     // C. 뉴스 수집 - 구현 중
     const newsCollector = createPlannedCollector(

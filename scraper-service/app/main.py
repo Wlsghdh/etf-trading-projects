@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import health, jobs, features, market_data
+from app.routers import health, jobs, features, market_data, edgar
 
 # Configure logging with date-based file handler
 _log_dir = Path(settings.log_dir)
@@ -44,6 +44,7 @@ app.include_router(health.router, tags=["Health"])
 app.include_router(jobs.router, prefix="/jobs", tags=["Jobs"])
 app.include_router(features.router, prefix="/features", tags=["Features"])
 app.include_router(market_data.router, prefix="/market-data", tags=["Market Data"])
+app.include_router(edgar.router, tags=["Edgar"])
 
 
 @app.on_event("startup")

@@ -16,6 +16,8 @@ export async function GET(request: Request) {
       url = `${SCRAPER_URL}/jobs/logs?limit=${limit}&min_level=${minLevel}`;
     } else if (collector === 'market-data') {
       url = `${SCRAPER_URL}/market-data/logs?limit=${limit}`;
+    } else if (collector === 'sec-edgar') {
+      url = `${SCRAPER_URL}/edgar/logs?limit=${limit}`;
     } else if (collector === 'feature-pipeline') {
       // Feature pipeline doesn't have a dedicated logs endpoint
       return NextResponse.json({ logs: [], count: 0 });
