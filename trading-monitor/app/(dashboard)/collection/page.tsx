@@ -58,6 +58,7 @@ function StatusBadge({ status }: { status: string }) {
     partial: { label: '부분완료', className: 'bg-yellow-500 text-white hover:bg-yellow-600' },
     error: { label: '에러', className: 'bg-red-500 text-white hover:bg-red-600' },
     idle: { label: '대기', className: 'bg-muted text-muted-foreground' },
+    planned: { label: '미구현', className: 'bg-purple-500/20 text-purple-500 border border-purple-500/30' },
     unknown: { label: '연결 실패', className: 'bg-muted text-muted-foreground' },
   };
   const v = variants[status] || variants.unknown;
@@ -313,7 +314,7 @@ export default function CollectionPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch('/api/collection/status');
+      const res = await fetch('/trading/api/collection/status');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setData(json);

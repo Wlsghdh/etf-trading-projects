@@ -10,7 +10,7 @@ interface CollectorStatus {
   name: string;
   source: string;
   description: string;
-  status: 'running' | 'completed' | 'error' | 'idle' | 'partial' | 'unknown';
+  status: 'running' | 'completed' | 'error' | 'idle' | 'partial' | 'unknown' | 'planned';
   lastRun: string | null;
   lastSuccess: string | null;
   totalItems: number | null;
@@ -216,6 +216,30 @@ async function fetchFeatureStatus(): Promise<CollectorStatus> {
   return base;
 }
 
+function createPlannedCollector(
+  id: string,
+  name: string,
+  source: string,
+  description: string
+): CollectorStatus {
+  return {
+    id,
+    name,
+    source,
+    description,
+    status: 'planned',
+    lastRun: null,
+    lastSuccess: null,
+    totalItems: null,
+    successCount: null,
+    errorCount: null,
+    successRate: null,
+    currentItem: null,
+    duration: null,
+    recentJobs: [],
+  };
+}
+
 export async function GET() {
   try {
     const [scraper, marketData, features] = await Promise.all([
@@ -224,8 +248,24 @@ export async function GET() {
       fetchFeatureStatus(),
     ]);
 
+    // B. SEC Edgar (해외 전자공시) - 미구현
+    const secEdgar = createPlannedCollector(
+      'sec-edgar',
+      'SEC Edgar (전자공시)',
+      'SEC EDGAR API',
+      '10-K, 10-Q, 8-K 등 미국 공시 데이터'
+    );
+
+    // C. 뉴스 수집 - 미구현
+    const newsCollector = createPlannedCollector(
+      'news-collector',
+      'News Collector (뉴스)',
+      'News API / Web Scraping',
+      '종목별 관련 기사 수집 및 중복 제거'
+    );
+
     return NextResponse.json({
-      collectors: [scraper, marketData, features],
+      collectors: [scraper, marketData, features, secEdgar, newsCollector],
       updatedAt: new Date().toISOString(),
     });
   } catch (error) {
