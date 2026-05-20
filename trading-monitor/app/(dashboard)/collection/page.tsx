@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import {
   Card,
   CardContent,
@@ -235,6 +236,18 @@ function CollectorMatrix({ collectors }: { collectors: CollectorStatus[] }) {
                   <div>
                     <div className="font-medium">{c.name}</div>
                     <div className="text-xs text-muted-foreground">{c.description}</div>
+                    {c.id === 'tradingview-scraper' && (
+                      <Link href="/trading/db-viewer" className="text-xs text-blue-500 hover:underline">etf2_db →</Link>
+                    )}
+                    {c.id === 'market-data' && (
+                      <span className="text-xs text-muted-foreground">etf2_market_data</span>
+                    )}
+                    {c.id === 'sec-edgar' && (
+                      <span className="text-xs text-muted-foreground">etf2_edgar</span>
+                    )}
+                    {c.id === 'feature-pipeline' && (
+                      <Link href="/trading/db-viewer" className="text-xs text-blue-500 hover:underline">etf2_db_processed →</Link>
+                    )}
                   </div>
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">{c.source}</TableCell>
