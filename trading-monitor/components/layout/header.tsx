@@ -6,6 +6,7 @@ import { ThemeToggle } from '@/components/theme/theme-toggle';
 
 const pageTitles: Record<string, string> = {
   '/': '대시보드',
+  '/collection': '데이터 수집 창고',
   '/scraping': '데이터 수집 관리',
   '/preprocessing': '데이터 전처리 (피처 엔지니어링)',
   '/model': 'ML 모니터링',
