@@ -142,12 +142,71 @@ function SummaryCards({ collectors }: { collectors: CollectorStatus[] }) {
   );
 }
 
+interface LogEntry {
+  id?: number;
+  job_id?: string;
+  timestamp?: string;
+  started_at?: string;
+  level?: string;
+  symbol?: string;
+  message?: string;
+  status?: string;
+  total_metrics?: number;
+  success_count?: number;
+  fail_count?: number;
+}
+
+function LogPanel({ collectorId }: { collectorId: string }) {
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`/trading/api/collection/logs?collector=${collectorId}&limit=30&min_level=INFO`)
+      .then((r) => r.json())
+      .then((d) => setLogs(d.logs || []))
+      .catch(() => setLogs([]))
+      .finally(() => setLoading(false));
+  }, [collectorId]);
+
+  if (loading) return <div className="p-4 text-sm text-muted-foreground">로그 로딩 중...</div>;
+  if (logs.length === 0) return <div className="p-4 text-sm text-muted-foreground">로그가 없습니다.</div>;
+
+  return (
+    <div className="max-h-64 overflow-y-auto border-t bg-muted/30 p-3">
+      <div className="space-y-1 font-mono text-xs">
+        {logs.map((l, i) => {
+          const time = l.timestamp || l.started_at || '';
+          const timeStr = time ? new Date(time).toLocaleTimeString('ko-KR') : '';
+          const level = l.level || l.status || '';
+          const msg = l.message || `${l.status} (${l.success_count ?? 0}/${l.total_metrics ?? 0})`;
+          const color =
+            level === 'ERROR' || level === 'failed'
+              ? 'text-red-500'
+              : level === 'WARNING' || level === 'partial'
+                ? 'text-yellow-500'
+                : 'text-muted-foreground';
+          return (
+            <div key={i} className="flex gap-2">
+              <span className="shrink-0 text-muted-foreground">{timeStr}</span>
+              <span className={`shrink-0 w-14 ${color}`}>{level}</span>
+              {l.symbol && <span className="shrink-0 text-blue-500">[{l.symbol}]</span>}
+              <span className="truncate">{msg}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function CollectorMatrix({ collectors }: { collectors: CollectorStatus[] }) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>수집기 현황</CardTitle>
-        <CardDescription>모든 데이터 수집 시스템 상태 매트릭스</CardDescription>
+        <CardDescription>행을 클릭하면 상세 로그를 확인할 수 있습니다</CardDescription>
       </CardHeader>
       <CardContent>
         <Table>
@@ -166,7 +225,12 @@ function CollectorMatrix({ collectors }: { collectors: CollectorStatus[] }) {
           </TableHeader>
           <TableBody>
             {collectors.map((c) => (
-              <TableRow key={c.id}>
+              <>
+                <TableRow
+                  key={c.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => setExpanded(expanded === c.id ? null : c.id)}
+                >
                 <TableCell>
                   <div>
                     <div className="font-medium">{c.name}</div>
@@ -232,6 +296,14 @@ function CollectorMatrix({ collectors }: { collectors: CollectorStatus[] }) {
                   )}
                 </TableCell>
               </TableRow>
+              {expanded === c.id && (
+                <TableRow key={`${c.id}-logs`}>
+                  <TableCell colSpan={9} className="p-0">
+                    <LogPanel collectorId={c.id} />
+                  </TableCell>
+                </TableRow>
+              )}
+              </>
             ))}
           </TableBody>
         </Table>
