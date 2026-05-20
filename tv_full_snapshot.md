@@ -1,0 +1,19 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e38]:
+      - 'button "로그인계정: hrahn 활성 레이아웃: default" [ref=e39]'
+      - generic [ref=e40]: "11"
+    - toolbar [ref=e43]:
+      - generic [ref=e47]
+    - toolbar [ref=e175]:
+      - generic [ref=e179]
+    - generic [ref=e12]:
+      - 'region "차트 #1" [ref=e360]'
+      - toolbar [ref=e17]
+    - generic [ref=e492]:
+      - toolbar [ref=e497]
+      - generic [ref=e552]: "[] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] – [] –"
+    - generic "트레이딩 패널"
+  - generic:
+    - generic:
+      - generic

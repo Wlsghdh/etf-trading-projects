@@ -248,20 +248,20 @@ export async function GET() {
       fetchFeatureStatus(),
     ]);
 
-    // B. SEC Edgar (해외 전자공시) - 미구현
+    // B. SEC Edgar (해외 전자공시) - 구현 중 (스크립트 존재, API 미연동)
     const secEdgar = createPlannedCollector(
       'sec-edgar',
       'SEC Edgar (전자공시)',
-      'SEC EDGAR API',
-      '10-K, 10-Q, 8-K 등 미국 공시 데이터'
+      'SEC EDGAR API (edgartools)',
+      '10-K, 10-Q, 8-K 등 미국 공시 데이터 (구현 중)'
     );
 
-    // C. 뉴스 수집 - 미구현
+    // C. 뉴스 수집 - 구현 중
     const newsCollector = createPlannedCollector(
       'news-collector',
       'News Collector (뉴스)',
       'News API / Web Scraping',
-      '종목별 관련 기사 수집 및 중복 제거'
+      '종목별 관련 기사 수집 및 중복 제거 (구현 중)'
     );
 
     return NextResponse.json({
